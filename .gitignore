@@ -24,3 +24,7 @@ build/
 # Local test outputs
 *.pdf
 /tmp_*
+
+# 백업 파일 (NAS 로컬에만)
+*.bak
+*.bak.*

@@ -6,20 +6,33 @@ GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *A
 
 ## 무엇을 하는가
 
-알리오 항목별공시는 약 344개 공공기관이 의무적으로 공시하는 83개 표준화된 정보 메뉴다(임직원 수·임원연봉·신규채용 현황·이사회·자체 감사부서·임원 모집공고 등). 이 MCP는 그 데이터를 LLM이 자연어로 직접 다룰 수 있게 한다.
+알리오 항목별공시는 약 355개 공공기관이 의무적으로 공시하는 92개 표준화된 정보 메뉴다(임직원 수·임원연봉·신규채용 현황·이사회·자체 감사부서·임원 모집공고·감사원 지적사항 등). 이 MCP는 그 데이터를 LLM이 자연어로 직접 다룰 수 있게 한다.
 
-> *예* — "산단공이랑 정원 비슷한 기관 5곳 임직원수 비교해줘", "최근 30일 임원 모집공고를 부처별로 정리해줘", "산단공 비상임감사 모집공고 PDF 받아줘"
+> *예* — "산단공이랑 정원 비슷한 기관 5곳 임직원수 비교해줘", "최근 30일 임원 모집공고를 부처별로 정리해줘", "산단공 감사원 지적사항 첨부 PDF 다 받아줘"
 
-## 제공 도구 (v0.2.0 — 4개)
+## 아키텍처 (v0.3.0)
+
+이 패키지의 `alio_core.py`는 알리오 API 호출·HTML 파싱·파일 다운로드를 담당하는 **공유 라이브러리(정본)**다. GUI 크롤러([alio-crawler](https://github.com/giovinazo/alio-crawler))는 자기 레포에 이 파일의 **sync된 사본**을 보유하며, 두 프로젝트가 동일 코어로 동작한다.
+
+**동기화 절차** (alio_core.py 수정 후):
+```bash
+./sync_to_crawler.sh   # 형제 폴더 "1. 알리오 크롤러"로 cp
+# 또는 다른 위치:
+CRAWLER_DIR=/path/to/alio-crawler ./sync_to_crawler.sh
+```
+
+본 레포 단독으로 MCP 서버 실행에 알리오-크롤러는 필요 없다.
+
+## 제공 도구 (v0.3.0 — 7개)
 
 ### 1. `list_menus(category="")`
 
-알리오 항목별공시 메뉴 83개 목록 조회.
+알리오 항목별공시 메뉴 92개 목록 조회 (v5.4.2 기준 — ESG 운영·AI 활용 카테고리 신설 반영).
 
 **인자**
-- `category` *(string, optional)* — 대분류명. 허용값: `"기관운영"` / `"ESG 운영"` / `"경영성과"` / `"대내외 평가 등"`
+- `category` *(string, optional)* — 대분류명. 허용값: `"기관운영"` / `"ESG 운영"` / `"경영성과"` / `"대내외 평가 등"` / `"AI 활용"`
   - 공백·대소문자 차이 자동 흡수 (`"esg운영"`도 매칭)
-  - 빈 문자열이면 전체 83개 반환
+  - 빈 문자열이면 전체 92개 반환
 
 **반환 예**
 ```json
@@ -31,7 +44,7 @@ GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *A
 
 ### 2. `list_organs(rootNo, page=1)`
 
-특정 메뉴(rootNo)에 공시하는 약 344개 기관 목록 조회.
+특정 메뉴(rootNo)에 공시하는 약 355개 기관 목록 조회.
 
 **인자**
 - `rootNo` *(string, required)* — 메뉴 식별자 (예: `"10105"` 일반현황, `"B1010"` 임원 모집공고)
@@ -99,7 +112,72 @@ GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *A
 }
 ```
 
-매칭 실패 또는 인자 누락 시 모두 `{"error": "..."}` 시그널 반환 (NOT_FOUND·MISSING·HTTP·API_ERROR).
+### 5. `search_organs(name)` *(v0.3.0 신규)*
+
+공공기관 약 355개 중 기관명 부분 일치 검색.
+
+**인자**
+- `name` *(string, required)* — 검색 키워드 (부분 문자열). 예: `"산업단지"`, `"한국전력"`
+
+**반환 예**
+```json
+{
+  "총_검색결과": 1,
+  "기관": [
+    {"기관ID": "C0208", "기관명": "한국산업단지공단",
+     "기관유형": "준정부기관(위탁집행형)", "주무부처": "산업통상부", "지역": "대구광역시"}
+  ]
+}
+```
+
+첫 호출 시 알리오 기관목록 API를 1회 호출해 캐시. 상위 50건 반환.
+
+### 6. `list_board_attachments(apbaId, reportFormNo, idx, disclosureNo, ...)` *(v0.3.0 신규)*
+
+게시판형 자료의 첨부파일·외부링크 메타 추출 (`itemBoard{reportFormNo}.do` HTML 파싱).
+
+감사원 지적사항(B1220)·국회 외부평가(B1210)·임원 모집공고(B1010)·직원 채용(B1020) 등에서 첨부 PDF/HWP 메타를 얻는다.
+
+**인자** (모두 `list_board_items` 응답에서 그대로 전달)
+- `apbaId` *(string, required)* — 기관ID
+- `reportFormNo` *(string, required)* — 게시판 항목 코드
+- `idx`, `disclosureNo`, `tableName`, `idxName`, `bidType` *(string, optional)*
+
+**반환 예**
+```json
+{
+  "첨부": [
+    {"kind": "upload", "name": "2025년도 산업통상자원부 종합감사 결과.pdf",
+     "spath": "/2025/...", "sfile": "abc.pdf", "file_no": ""}
+  ],
+  "외부링크": [{"url": "https://www.g2b.go.kr/...", "text": "나라장터 입찰공고"}]
+}
+```
+
+두 가지 첨부 패턴 통합:
+- `kind="upload"`: `/upload{spath}{sfile}` 직접 GET (감사원/국회 지적사항)
+- `kind="fileno"`: `/download/download.json?fileNo=N` GET (임원 모집공고·직원 채용)
+
+### 7. `download_board_attachment(kind, name, spath, sfile, file_no, save_dir)` *(v0.3.0 신규)*
+
+게시판형 첨부파일 다운로드. `list_board_attachments` 응답의 `첨부` 항목 필드를 그대로 전달.
+
+**인자**
+- `kind` *(string, required)* — `"upload"` 또는 `"fileno"`
+- `name` *(string, optional)* — 저장 파일명
+- `spath`, `sfile` *(string)* — `kind="upload"`일 때
+- `file_no` *(string)* — `kind="fileno"`일 때
+- `save_dir` *(string, optional, 기본 `/tmp/alio_downloads`)*
+
+**반환 예**
+```json
+{
+  "saved_path": "/tmp/alio_downloads/2025년도 산업통상자원부 종합감사 결과.pdf",
+  "size_bytes": 75824
+}
+```
+
+매칭 실패 또는 인자 누락 시 모두 `{"error": "..."}` 시그널 반환 (NOT_FOUND·MISSING·HTTP·API_ERROR·DOWNLOAD_FAILED).
 
 ## 설치
 
@@ -138,9 +216,11 @@ Claude에서 자연어 한 줄로:
 | 질의 | 동원되는 도구 |
 |---|---|
 | "기관운영 대분류 메뉴 보여줘" | `list_menus("기관운영")` |
+| "산단공 기관ID 찾아줘" | `search_organs("산업단지공단")` |
 | "한국산업단지공단의 일반현황 공시번호 찾아줘" | `list_organs("10105")` → apbaId 필터링 |
-| "산단공 최근 임원 모집공고 가져와" | `list_board_items("B1010", "C0208")` |
-| "그 공고 PDF 받아줘" | `download_report(disclosureNo, save_dir)` |
+| "산단공 최근 감사원 지적사항 가져와" | `list_board_items("B1220", "C0208")` |
+| "그 자료 첨부 PDF 다 받아줘" | `list_board_attachments(...)` → `download_board_attachment(...)` × N |
+| "산단공 비상임감사 모집공고 PDF 받아줘" | `list_board_items("B1010", "C0208")` → `download_report(disclosureNo)` |
 
 ## 데이터 출처 / API 참고
 
@@ -153,7 +233,12 @@ Claude에서 자연어 한 줄로:
 | `POST /item/itemReportListSusi.json` | 게시판형 자료 목록 | `list_board_items` |
 | `GET /download/pdf.json` | 보고서 PDF 다운로드 | `download_report` |
 
-기타 다운로드 엔드포인트(`file.json`·`dfile.json`·`rulefiledown.json`) 및 게시판형 첨부파일 직접 다운로드는 후속 버전에서 도구로 추가 예정.
+| `GET /item/itemBoard{rfn}.do` (HTML 파싱) | 게시판형 첨부·외부링크 메타 추출 | `list_board_attachments` |
+| `GET /upload{spath}{sfile}` | 게시판형 첨부 (패턴 A) | `download_board_attachment` |
+| `GET /download/download.json?fileNo=N` | 게시판형 첨부 (패턴 B) | `download_board_attachment` |
+| `POST /organ/findOrganApbaList.json` | 공공기관 전체 목록 (지역 포함) | `search_organs` |
+
+보고서형 부속 첨부(`file.json`)·안전경영책임보고서(`dfile.json`)·내부규정(`rulefiledown.json`)은 후속 버전에서 도구로 추가 예정 (코어 함수 `download_attachment`는 이미 구현되어 있어 노출만 남음).
 
 ## 라이선스
 
@@ -167,14 +252,16 @@ Claude에서 자연어 한 줄로:
 
 ## 변경 이력
 
+- **v0.3.0** (2026-05-19) — `alio_core.py` 도입(alio-crawler v5.4 다운로드 코어 공유). 도구 3종 추가 (`search_organs`, `list_board_attachments`, `download_board_attachment`). 메뉴 수 83→92개 (ESG 운영·AI 활용 카테고리 신설). 기관 수 344→355개.
 - **v0.2.0** (2026-04-28) — 도구 3종 추가 (`list_organs`, `list_board_items`, `download_report`)
 - **v0.1.0** (2026-04-27) — 초기 공개. `list_menus` 단일 도구.
 
 ## 후속 계획
 
-- [ ] `download_attachment` — 일반 첨부(`file.json`)·안전경영책임보고서(`dfile.json`)·내부규정(`rulefiledown.json`) 엔드포인트 통합
-- [ ] `download_board_attachment` — 게시판형 첨부파일 직접 다운로드 (`itemBoard{rfn}.do` HTML 파싱)
-- [ ] `search_organs` — 기관명 부분 일치 검색 도구
+- [ ] `download_disclosure_attachment` — 보고서형 부속 첨부(`file.json`)·안전경영책임보고서(`dfile.json`) 노출 (코어 함수 `download_attachment`는 이미 구현됨, MCP 도구로 wrapping만 남음)
+- [ ] `download_rule_file` — 내부규정(`findRuleList → findRuleDtl → rulefiledown.json` 체인) 노출
+- [x] ~~`download_board_attachment` — 게시판형 첨부파일 직접 다운로드~~ (v0.3.0 완료)
+- [x] ~~`search_organs` — 기관명 부분 일치 검색~~ (v0.3.0 완료)
 
 ---
 
