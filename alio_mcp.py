@@ -1,16 +1,20 @@
-"""알리오 항목별공시 MCP 서버 v0.3.0
+"""알리오 항목별공시 MCP 서버 v0.4.0
 
 한국 공공기관 정보공개시스템 알리오(www.alio.go.kr)의 항목별공시
 92개 메뉴와 약 355개 공시 대상 기관 데이터를 LLM 도구로 노출한다.
 
-도구 7개:
-    list_menus(category)              — 메뉴 목록 (92개, 4개 대분류 필터)
-    list_organs(rootNo, page)         — 항목별 공시 기관 목록
-    list_board_items(rootNo, ...)     — 게시판형 자료 목록
-    download_report(disclosureNo, …)  — 공시 보고서 PDF 다운로드
-    search_organs(name)               — 기관명 부분 일치 검색 (신규 v0.3.0)
-    list_board_attachments(...)       — 게시판형 자료 첨부 메타 (신규 v0.3.0)
-    download_board_attachment(...)    — 게시판형 첨부 다운로드 (신규 v0.3.0)
+도구 11개:
+    list_menus(category)                       — 메뉴 목록 (92개)
+    list_organs(rootNo, page)                  — 항목별 공시 기관 목록
+    list_board_items(rootNo, apbaId, page)     — 게시판형 자료 1페이지
+    list_all_board_items(rootNo, apbaId)       — 전체 페이지 자동 순회 (신규 v0.4.0)
+    download_report(disclosureNo, …)           — 공시 보고서 PDF
+    download_disclosure_attachment(kind, …)    — 보고서 부속 첨부 file/dfile (신규 v0.4.0)
+    search_organs(name)                        — 기관명 부분 일치 검색
+    list_board_attachments(...)                — 게시판형 자료 첨부 메타
+    download_board_attachment(...)             — 게시판형 첨부 다운로드
+    list_rules(instName, divis)                — 기관 내부규정 목록 + 최신 파일 (신규 v0.4.0)
+    download_rule_file(fileNo, …)              — 내부규정 파일 다운로드 (신규 v0.4.0)
 
 코어 라이브러리: ./alio_core.py (alio-crawler와 공유)
 """
@@ -28,6 +32,9 @@ from alio_core import (
     fetch_board_attachment_list, fetch_board_external_links,
     download_board_attachment as _core_download_board,
     download_attachment as _core_download_attachment,
+    fetch_all_rules, fetch_rule_detail, download_rule_file_to_path,
+    fetch_all_board_items, sanitize_filename,
+    RULE_DIVIS_CODES,
 )
 
 mcp = FastMCP("alio")
@@ -424,6 +431,192 @@ def download_board_attachment(
     success, saved, msg = _core_download_board(sess, attachment, save_dir)
     if not success:
         return {"error": f"DOWNLOAD_FAILED: {msg}"}
+    return {
+        "saved_path": saved,
+        "size_bytes": os.path.getsize(saved) if os.path.exists(saved) else 0,
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# Tool 8: 게시판형 자료 전체 페이지 자동 순회 (신규 v0.4.0)
+# ─────────────────────────────────────────────────────────────
+@mcp.tool()
+def list_all_board_items(rootNo: str, apbaId: str = "") -> dict:
+    """itemReportListSusi 응답을 모든 페이지에 걸쳐 자동 순회한다.
+
+    list_board_items는 단일 페이지(통상 10건). 자체감사·경영실적평가·
+    감사원 지적사항처럼 누적 수십~수백건이 쌓이는 자료군은 한 번에
+    전부 조회하는 것이 더 효율적이다.
+
+    Args:
+        rootNo: 자료 식별자. 예 — '43006'(자체감사), 'B1230'(경영실적
+                평가결과), 'B1220'(감사원 지적사항), 'B1210'(국회 외부평가).
+        apbaId: 기관 ID. 빈 문자열이면 전체 기관 최근순.
+
+    Returns:
+        {"rootNo", "totalCnt", "자료": [{"제목", "등록일", "기관ID",
+         "공시번호", "제출번호", "idx", "reportFormNo", "tableName",
+         "idxName", "bidType"}, ...]}
+        list_board_attachments 호출에 자료 필드를 그대로 전달 가능.
+    """
+    if not rootNo:
+        return {"error": "MISSING: rootNo가 필수입니다"}
+
+    sess = create_session()
+    items = fetch_all_board_items(sess, rootNo, apba_id=apbaId)
+    if not items:
+        return {
+            "error": f"NOT_FOUND: rootNo='{rootNo}' apbaId='{apbaId}' 자료 없음",
+            "totalCnt": 0, "자료": [],
+        }
+    return {
+        "rootNo": rootNo,
+        "totalCnt": len(items),
+        "자료": items,
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# Tool 9: 보고서형 부속 첨부 다운로드 file·dfile (신규 v0.4.0)
+# ─────────────────────────────────────────────────────────────
+@mcp.tool()
+def download_disclosure_attachment(
+    kind: str,
+    fileName: str,
+    disclosureNo: str = "",
+    submissionNo: str = "",
+    fileId: str = "",
+    save_dir: str = "/tmp/alio_downloads",
+) -> dict:
+    """보고서형 공시의 부속 첨부파일 다운로드.
+
+    download_report(공시 PDF)와 달리 보고서에 동봉된 엑셀·한글 등 부속 첨부.
+
+    Args:
+        kind: 'file'(일반 첨부 — fileId + disclosureNo 필요) 또는
+              'dfile'(안전경영책임보고서 — fileName + submissionNo 필요,
+              사망자수 공시 70401에 해당).
+        fileName: 저장 파일명 + 'dfile' 식별자. 알리오 응답에서 받은 원본명.
+        disclosureNo: 공시번호 (kind='file'일 때 필수).
+        submissionNo: 제출번호 (kind='dfile'일 때 필수).
+        fileId: 파일 ID (kind='file'일 때 필수, parse_files_field 결과의 'id').
+        save_dir: 저장 디렉토리 (없으면 자동 생성).
+
+    Returns:
+        {"saved_path", "size_bytes"}
+    """
+    if kind not in ("file", "dfile"):
+        return {"error": f"INVALID: kind는 'file' 또는 'dfile' (받음: '{kind}')"}
+    if not fileName:
+        return {"error": "MISSING: fileName이 필수입니다"}
+    if kind == "file" and (not fileId or not disclosureNo):
+        return {"error": "MISSING: kind='file'은 fileId + disclosureNo 필수"}
+    if kind == "dfile" and not submissionNo:
+        return {"error": "MISSING: kind='dfile'은 submissionNo 필수"}
+
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+    sess = create_session()
+    success, saved, msg = _core_download_attachment(
+        sess, kind,
+        {"id": fileId, "name": fileName},
+        save_dir,
+        disclosure_no=disclosureNo,
+        submission_no=submissionNo,
+    )
+    if not success:
+        return {"error": f"DOWNLOAD_FAILED: {msg}"}
+    return {
+        "saved_path": saved,
+        "size_bytes": os.path.getsize(saved) if os.path.exists(saved) else 0,
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# Tool 10: 기관 내부규정 목록 + 최신 파일 메타 (신규 v0.4.0)
+# ─────────────────────────────────────────────────────────────
+@mcp.tool()
+def list_rules(instName: str, divis: str = "") -> dict:
+    """기관 내부규정 목록을 전체 페이지 자동 순회로 조회.
+
+    각 규정에 대해 findRuleDtl을 호출해 .zip을 제외한 **최신 파일 메타**까지
+    함께 반환한다. 반환된 latest.file_no를 download_rule_file에 그대로 전달
+    가능.
+
+    Args:
+        instName: 기관명 (apbaNa 검색). 예: '한국산업단지공단', '한국전력공사'.
+        divis: 분류 코드. 빈 문자열이면 전체.
+               'K1500'(정관), 'K1100'(인사·복무·징계), 'K1200'(보수),
+               'K1300'(직제), 'K1400'(기타).
+
+    Returns:
+        {"totalCnt", "분류명": divis_label, "규정": [{"seq", "title",
+         "insdRuleDivis", "files_count", "latest": {"file_no", "file_name"}}, ...]}
+    """
+    if not instName:
+        return {"error": "MISSING: instName이 필수입니다"}
+    if divis and divis not in RULE_DIVIS_CODES.values():
+        return {
+            "error": f"INVALID: divis는 RULE_DIVIS_CODES 값 중 하나여야 함",
+            "유효한_divis": RULE_DIVIS_CODES,
+        }
+
+    sess = create_session()
+    rules = fetch_all_rules(sess, instName, divis=divis)
+    if not rules:
+        return {"error": f"NOT_FOUND: '{instName}' 내부규정 없음", "totalCnt": 0, "규정": []}
+
+    divis_label = next((k for k, v in RULE_DIVIS_CODES.items() if v == divis), "전체")
+    result = []
+    for r in rules:
+        seq = r.get("seq", "")
+        detail = fetch_rule_detail(sess, seq) if seq else {"files": [], "latest": None}
+        result.append({
+            "seq": seq,
+            "title": r.get("title", ""),
+            "insdRuleDivis": r.get("insdRuleDivis", ""),
+            "files_count": len(detail.get("files", [])),
+            "latest": detail.get("latest"),
+        })
+
+    return {
+        "totalCnt": len(result),
+        "분류명": divis_label,
+        "규정": result,
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# Tool 11: 내부규정 파일 다운로드 (신규 v0.4.0)
+# ─────────────────────────────────────────────────────────────
+@mcp.tool()
+def download_rule_file(
+    fileNo: str,
+    fileName: str = "",
+    save_dir: str = "/tmp/alio_downloads",
+) -> dict:
+    """내부규정 파일을 fileNo로 단건 다운로드.
+
+    list_rules 응답의 'latest.file_no' / 'latest.file_name'을 그대로 전달.
+
+    Args:
+        fileNo: 알리오 fileNo (list_rules → latest.file_no).
+        fileName: 저장 파일명. 빈 문자열이면 'rule_{fileNo}.bin'.
+        save_dir: 저장 디렉토리 (없으면 자동 생성).
+
+    Returns:
+        {"saved_path", "size_bytes"}
+    """
+    if not fileNo:
+        return {"error": "MISSING: fileNo가 필수입니다"}
+
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+    safe_name = sanitize_filename(fileName or f"rule_{fileNo}.bin", max_len=120)
+    save_path = os.path.join(save_dir, safe_name)
+
+    sess = create_session()
+    success, saved, msg = download_rule_file_to_path(sess, fileNo, save_path)
+    if not success:
+        return {"error": f"DOWNLOAD_FAILED: {msg}", "fileNo": fileNo}
     return {
         "saved_path": saved,
         "size_bytes": os.path.getsize(saved) if os.path.exists(saved) else 0,

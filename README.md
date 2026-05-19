@@ -10,7 +10,7 @@ GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *A
 
 > *예* — "산단공이랑 정원 비슷한 기관 5곳 임직원수 비교해줘", "최근 30일 임원 모집공고를 부처별로 정리해줘", "산단공 감사원 지적사항 첨부 PDF 다 받아줘"
 
-## 아키텍처 (v0.3.0)
+## 아키텍처 (v0.4.0)
 
 이 패키지의 `alio_core.py`는 알리오 API 호출·HTML 파싱·파일 다운로드를 담당하는 **공유 라이브러리(정본)**다. GUI 크롤러([alio-crawler](https://github.com/giovinazo/alio-crawler))는 자기 레포에 이 파일의 **sync된 사본**을 보유하며, 두 프로젝트가 동일 코어로 동작한다.
 
@@ -23,7 +23,22 @@ CRAWLER_DIR=/path/to/alio-crawler ./sync_to_crawler.sh
 
 본 레포 단독으로 MCP 서버 실행에 알리오-크롤러는 필요 없다.
 
-## 제공 도구 (v0.3.0 — 7개)
+## 제공 도구 (v0.4.0 — 11개)
+
+| # | 도구 | 도입 | 용도 |
+|---|---|---|---|
+| 1 | `list_menus` | v0.1.0 | 메뉴 92개 |
+| 2 | `list_organs` | v0.2.0 | 메뉴별 기관 ~355개 |
+| 3 | `list_board_items` | v0.2.0 | 게시판형 자료 1페이지 |
+| 4 | `download_report` | v0.2.0 | 공시 PDF |
+| 5 | `search_organs` | v0.3.0 | 기관명 부분 일치 |
+| 6 | `list_board_attachments` | v0.3.0 | 게시판형 첨부 메타 |
+| 7 | `download_board_attachment` | v0.3.0 | 게시판형 첨부 다운로드 |
+| 8 | `list_all_board_items` | **v0.4.0** | itemReportListSusi 전체 페이지 자동 순회 (audit·mgmt_eval 통합) |
+| 9 | `download_disclosure_attachment` | **v0.4.0** | 보고서 부속 첨부 file·dfile |
+| 10 | `list_rules` | **v0.4.0** | 기관 내부규정 목록 + 최신 파일 메타 |
+| 11 | `download_rule_file` | **v0.4.0** | 내부규정 파일 fileNo 다운로드 |
+
 
 ### 1. `list_menus(category="")`
 
@@ -221,6 +236,8 @@ Claude에서 자연어 한 줄로:
 | "산단공 최근 감사원 지적사항 가져와" | `list_board_items("B1220", "C0208")` |
 | "그 자료 첨부 PDF 다 받아줘" | `list_board_attachments(...)` → `download_board_attachment(...)` × N |
 | "산단공 비상임감사 모집공고 PDF 받아줘" | `list_board_items("B1010", "C0208")` → `download_report(disclosureNo)` |
+| "산단공 자체감사 결과 다 가져와" *(v0.4.0)* | `list_all_board_items("43006", "C0208")` — 79건 일괄 |
+| "산단공 정관 최신 HWP 받아줘" *(v0.4.0)* | `list_rules("한국산업단지공단", "K1500")` → `download_rule_file(fileNo)` |
 
 ## 데이터 출처 / API 참고
 
@@ -252,16 +269,18 @@ Claude에서 자연어 한 줄로:
 
 ## 변경 이력
 
+- **v0.4.0** (2026-05-19) — 도구 4종 추가: `list_all_board_items` (페이지 자동 순회로 audit·mgmt_eval·감사원 등 통합 처리), `download_disclosure_attachment` (보고서 부속 file·dfile), `list_rules` + `download_rule_file` (내부규정 체인 — findRuleList → findRuleDtl → rulefiledown). `self_check.py` 신설 (11개 도구 라이브 점검, PASS=12/13).
 - **v0.3.0** (2026-05-19) — `alio_core.py` 도입(alio-crawler v5.4 다운로드 코어 공유). 도구 3종 추가 (`search_organs`, `list_board_attachments`, `download_board_attachment`). 메뉴 수 83→92개 (ESG 운영·AI 활용 카테고리 신설). 기관 수 344→355개.
 - **v0.2.0** (2026-04-28) — 도구 3종 추가 (`list_organs`, `list_board_items`, `download_report`)
 - **v0.1.0** (2026-04-27) — 초기 공개. `list_menus` 단일 도구.
 
 ## 후속 계획
 
-- [ ] `download_disclosure_attachment` — 보고서형 부속 첨부(`file.json`)·안전경영책임보고서(`dfile.json`) 노출 (코어 함수 `download_attachment`는 이미 구현됨, MCP 도구로 wrapping만 남음)
-- [ ] `download_rule_file` — 내부규정(`findRuleList → findRuleDtl → rulefiledown.json` 체인) 노출
-- [x] ~~`download_board_attachment` — 게시판형 첨부파일 직접 다운로드~~ (v0.3.0 완료)
-- [x] ~~`search_organs` — 기관명 부분 일치 검색~~ (v0.3.0 완료)
+- [x] ~~`download_disclosure_attachment` (file·dfile)~~ (v0.4.0 완료)
+- [x] ~~`download_rule_file` 체인~~ (v0.4.0 완료)
+- [x] ~~`download_board_attachment`, `search_organs`~~ (v0.3.0 완료)
+- [ ] 입찰공고(B1030) 외부링크 일괄 추출 도구 (현재는 `list_board_attachments`의 `외부링크` 필드로 노출)
+- [ ] alio 사이트 패턴 변동 자동 감지·알림 (cron + diff)
 
 ---
 

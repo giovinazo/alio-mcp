@@ -744,3 +744,181 @@ def load_public_institutions(progress_callback=None):
     except Exception as e:
         print(f"공공기관 목록 로드 실패: {e}")
         return {}
+
+
+# ─────────────────────────────────────────────────────────
+# 내부규정 (findRuleList → findRuleDtl → rulefiledown)
+# ─────────────────────────────────────────────────────────
+
+def fetch_rule_list(session, inst_name: str, divis: str = "", page: int = 1) -> dict:
+    """기관명으로 내부규정 목록 1페이지 조회.
+
+    Args:
+        inst_name: 기관명 (예: '한국산업단지공단'). apbaNa로 검색.
+        divis: 내부규정 분류 코드 (RULE_DIVIS_CODES). 빈 문자열이면 전체.
+               'K1500'(정관)·'K1100'(인사·복무·징계)·'K1200'(보수)·
+               'K1300'(직제)·'K1400'(기타).
+        page: 페이지 번호 (1부터).
+
+    Returns:
+        {"totalCnt", "result": [{"seq", "title", "insdRuleDivis", ...}, ...]}
+        실패 시 {"error", "result": []}.
+    """
+    url = f"{BASE_URL}/occasional/findRuleList.json"
+    params = {
+        "type": "apbaNa",
+        "word": inst_name,
+        "pageNo": page,
+        "divis": divis,
+    }
+    try:
+        resp = retry_request(session, "GET", url, params=params, timeout=30)
+        if resp.status_code != 200:
+            return {"error": f"HTTP {resp.status_code}", "result": []}
+        data = resp.json().get("data") or {}
+        return {
+            "totalCnt": data.get("totalCnt", 0),
+            "result": data.get("result", []) or [],
+        }
+    except (requests.RequestException, ValueError) as e:
+        return {"error": str(e), "result": []}
+
+
+def fetch_all_rules(session, inst_name: str, divis: str = "") -> list:
+    """기관 내부규정 전체 페이지 자동 순회.
+
+    Args:
+        inst_name: 기관명.
+        divis: 분류 코드.
+
+    Returns:
+        [{"seq", "title", "insdRuleDivis", ...}, ...] 전체 목록.
+        오류·없음 시 빈 리스트.
+    """
+    first = fetch_rule_list(session, inst_name, divis, page=1)
+    items = list(first.get("result", []))
+    total_cnt = first.get("totalCnt", 0)
+    if total_cnt <= len(items) or not items:
+        return items
+    # 알리오 findRuleList 페이지 사이즈는 통상 10건 — 전체 수 / 페이지 사이즈
+    page_size = max(len(items), 1)
+    total_page = (total_cnt + page_size - 1) // page_size
+    for p in range(2, total_page + 1):
+        more = fetch_rule_list(session, inst_name, divis, page=p)
+        items.extend(more.get("result", []))
+    return items
+
+
+def fetch_rule_detail(session, seq: str) -> dict:
+    """규정 상세 조회. bFiles에서 .zip 제외하고 fileNo가 가장 큰(최신) 파일 메타 반환.
+
+    Args:
+        seq: 규정 시퀀스 (fetch_rule_list 응답의 'seq').
+
+    Returns:
+        {"seq", "bFiles_raw", "files": [{"file_no", "file_name"}, ...], "latest": {...} | None}
+        실패 시 {"error", ...}.
+    """
+    url = f"{BASE_URL}/occasional/findRuleDtl.json"
+    try:
+        resp = retry_request(session, "GET", url, params={"seq": seq}, timeout=15)
+        if resp.status_code != 200:
+            return {"error": f"HTTP {resp.status_code}", "files": [], "latest": None}
+        data = resp.json().get("data") or {}
+        b_files = data.get("bFiles", "") or ""
+        files = []
+        for entry in b_files.split(","):
+            entry = entry.strip()
+            if "|" not in entry:
+                continue
+            file_no, file_name = entry.split("|", 1)
+            file_no = file_no.strip()
+            file_name = file_name.strip()
+            if file_name.lower().endswith(".zip"):
+                continue
+            files.append({"file_no": file_no, "file_name": file_name})
+        latest = None
+        if files:
+            try:
+                latest = max(files, key=lambda f: int(f["file_no"]))
+            except (ValueError, TypeError):
+                latest = files[-1]
+        return {
+            "seq": seq,
+            "bFiles_raw": b_files,
+            "files": files,
+            "latest": latest,
+        }
+    except (requests.RequestException, ValueError) as e:
+        return {"error": str(e), "files": [], "latest": None}
+
+
+def download_rule_file_to_path(session, file_no: str, save_path: str):
+    """fileNo로 내부규정 파일 단건 다운로드. download_file_to_path 위임."""
+    url = f"{BASE_URL}/download/rulefiledown.json"
+    return download_file_to_path(session, url, save_path, params={"fileNo": file_no})
+
+
+# ─────────────────────────────────────────────────────────
+# 게시판형·보고서 자료 전체 페이지 자동 순회 (audit·mgmt_eval·감사원 등 통합 wrapper)
+# ─────────────────────────────────────────────────────────
+
+def fetch_all_board_items(session, root_no: str, apba_id: str = "",
+                          apba_type: str = "") -> list:
+    """itemReportListSusi.json을 페이지 자동 순회로 모든 자료 반환.
+
+    audit(43006)·mgmt_eval(B1230)·감사원지적사항(B1220) 등 게시판형/보고서형
+    모두 동일 엔드포인트라 한 함수로 처리한다.
+
+    Args:
+        root_no: 게시판/보고서 항목 식별자 (예: 'B1220', '43006').
+        apba_id: 기관 ID. 빈 문자열이면 전체 기관.
+        apba_type: 기관 유형 필터 (보통 빈 문자열).
+
+    Returns:
+        [{"제목", "등록일", "기관ID", "공시번호", "제출번호", "idx",
+          "reportFormNo", "tableName", "idxName", "bidType"}, ...]
+        실패 시 빈 리스트.
+    """
+    url = f"{BASE_URL}/item/itemReportListSusi.json"
+    headers = {"Content-Type": "application/json;charset=UTF-8"}
+    items = []
+    page_no = 1
+    total_page = 1
+
+    while page_no <= total_page:
+        body = {
+            "pageNo": page_no,
+            "apbaId": apba_id,
+            "apbaType": apba_type,
+            "reportFormRootNo": root_no,
+            "search_word": "",
+            "search_flag": "title",
+            "bid_type": "",
+            "enfc_istt": "",
+        }
+        try:
+            resp = retry_request(session, "POST", url, json=body, headers=headers, timeout=30)
+            if resp.status_code != 200:
+                break
+            data = resp.json().get("data") or {}
+            page_info = data.get("page", {}) or {}
+            total_page = page_info.get("totalPage", 1) or 1
+            for v in (data.get("result", []) or []):
+                items.append({
+                    "제목": v.get("title"),
+                    "등록일": v.get("idate"),
+                    "기관ID": v.get("apbaId"),
+                    "공시번호": v.get("disclosureNo"),
+                    "제출번호": v.get("submissionNo"),
+                    "idx": v.get("idx"),
+                    "reportFormNo": v.get("reportFormNo"),
+                    "tableName": v.get("tableName"),
+                    "idxName": v.get("idxName"),
+                    "bidType": v.get("bidType"),
+                })
+        except (requests.RequestException, ValueError):
+            break
+        page_no += 1
+
+    return items
