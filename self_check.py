@@ -1,4 +1,4 @@
-"""alio-mcp v0.4.0 자체점검 스크립트.
+"""alio-mcp v0.4.1 자체점검 스크립트.
 
 11개 MCP 도구를 라이브 호출해 응답·다운로드 헤더까지 검증한다.
 크롤러의 self_check_v5_4_1.py와 같은 형식.
@@ -47,7 +47,7 @@ def skip(label, reason):
 
 def main():
     print("=" * 70)
-    print(f"alio-mcp v0.4.0 자체점검 ({datetime.now():%Y-%m-%d %H:%M:%S})")
+    print(f"alio-mcp v0.4.1 자체점검 ({datetime.now():%Y-%m-%d %H:%M:%S})")
     print("테스트 기관: 한국산업단지공단 (apbaId=C0208)")
     print("=" * 70)
 
@@ -150,6 +150,12 @@ def main():
 
     # ───── [4] 내부규정 ─────
     print("\n[4] 내부규정 (rule 체인)")
+
+    # v0.4.1 count_only 경량 모드 (HTTP 1회)
+    count = m.list_rules(inst_name, count_only=True)
+    check("list_rules(산단공, count_only=True)",
+          count.get("totalCnt", 0) >= 1 and "규정" not in count,
+          f"{count.get('totalCnt')}건, 분류={count.get('분류명')}, payload keys={list(count.keys())}")
 
     rules = m.list_rules(inst_name, divis="K1500")
     check("list_rules(산단공, K1500 정관)",

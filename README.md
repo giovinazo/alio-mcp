@@ -36,7 +36,7 @@ CRAWLER_DIR=/path/to/alio-crawler ./sync_to_crawler.sh
 | 7 | `download_board_attachment` | v0.3.0 | 게시판형 첨부 다운로드 |
 | 8 | `list_all_board_items` | **v0.4.0** | itemReportListSusi 전체 페이지 자동 순회 (audit·mgmt_eval 통합) |
 | 9 | `download_disclosure_attachment` | **v0.4.0** | 보고서 부속 첨부 file·dfile |
-| 10 | `list_rules` | **v0.4.0** | 기관 내부규정 목록 + 최신 파일 메타 |
+| 10 | `list_rules` | **v0.4.1** | 기관 내부규정 목록 + 최신 파일 메타 (v0.4.1 `count_only`·`include_files` 경량 옵션) |
 | 11 | `download_rule_file` | **v0.4.0** | 내부규정 파일 fileNo 다운로드 |
 
 
@@ -238,6 +238,8 @@ Claude에서 자연어 한 줄로:
 | "산단공 비상임감사 모집공고 PDF 받아줘" | `list_board_items("B1010", "C0208")` → `download_report(disclosureNo)` |
 | "산단공 자체감사 결과 다 가져와" *(v0.4.0)* | `list_all_board_items("43006", "C0208")` — 79건 일괄 |
 | "산단공 정관 최신 HWP 받아줘" *(v0.4.0)* | `list_rules("한국산업단지공단", "K1500")` → `download_rule_file(fileNo)` |
+| "위탁집행형 준정부기관 49곳 규정 수 집계해줘" *(v0.4.1)* | 기관별 `list_rules(instName, count_only=True)` × 49 (HTTP 49회) |
+| "산단공 정관 제목만 다 보여줘" *(v0.4.1)* | `list_rules("한국산업단지공단", "K1500", include_files=False)` |
 
 ## 데이터 출처 / API 참고
 
@@ -269,6 +271,7 @@ Claude에서 자연어 한 줄로:
 
 ## 변경 이력
 
+- **v0.4.1** (2026-05-21) — `list_rules` 경량 옵션 2종 추가. `count_only=True`는 findRuleList 1페이지만 호출해 `totalCnt`만 반환(다수 기관 카운트 집계용, HTTP 1회). `include_files=False`는 findRuleDtl 호출을 생략(파일 메타 없이 제목·seq만, HTTP 호출은 페이지 수만큼). 기존 풀스펙 동작은 기본값 유지(하위호환). 한국국토정보공사 158건 기준 174회 → 1회(`count_only`) / 16회(`include_files=False`).
 - **v0.4.0** (2026-05-19) — 도구 4종 추가: `list_all_board_items` (페이지 자동 순회로 audit·mgmt_eval·감사원 등 통합 처리), `download_disclosure_attachment` (보고서 부속 file·dfile), `list_rules` + `download_rule_file` (내부규정 체인 — findRuleList → findRuleDtl → rulefiledown). `self_check.py` 신설 (11개 도구 라이브 점검, PASS=12/13).
 - **v0.3.0** (2026-05-19) — `alio_core.py` 도입(alio-crawler v5.4 다운로드 코어 공유). 도구 3종 추가 (`search_organs`, `list_board_attachments`, `download_board_attachment`). 메뉴 수 83→92개 (ESG 운영·AI 활용 카테고리 신설). 기관 수 344→355개.
 - **v0.2.0** (2026-04-28) — 도구 3종 추가 (`list_organs`, `list_board_items`, `download_report`)

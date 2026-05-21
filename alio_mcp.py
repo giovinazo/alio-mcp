@@ -1,4 +1,4 @@
-"""알리오 항목별공시 MCP 서버 v0.4.0
+"""알리오 항목별공시 MCP 서버 v0.4.1
 
 한국 공공기관 정보공개시스템 알리오(www.alio.go.kr)의 항목별공시
 92개 메뉴와 약 355개 공시 대상 기관 데이터를 LLM 도구로 노출한다.
@@ -7,14 +7,15 @@
     list_menus(category)                       — 메뉴 목록 (92개)
     list_organs(rootNo, page)                  — 항목별 공시 기관 목록
     list_board_items(rootNo, apbaId, page)     — 게시판형 자료 1페이지
-    list_all_board_items(rootNo, apbaId)       — 전체 페이지 자동 순회 (신규 v0.4.0)
+    list_all_board_items(rootNo, apbaId)       — 전체 페이지 자동 순회 (v0.4.0)
     download_report(disclosureNo, …)           — 공시 보고서 PDF
-    download_disclosure_attachment(kind, …)    — 보고서 부속 첨부 file/dfile (신규 v0.4.0)
+    download_disclosure_attachment(kind, …)    — 보고서 부속 첨부 file/dfile (v0.4.0)
     search_organs(name)                        — 기관명 부분 일치 검색
     list_board_attachments(...)                — 게시판형 자료 첨부 메타
     download_board_attachment(...)             — 게시판형 첨부 다운로드
-    list_rules(instName, divis)                — 기관 내부규정 목록 + 최신 파일 (신규 v0.4.0)
-    download_rule_file(fileNo, …)              — 내부규정 파일 다운로드 (신규 v0.4.0)
+    list_rules(instName, divis, count_only,    — 기관 내부규정 목록 (v0.4.1
+                include_files)                    경량옵션 추가: 다수 기관 카운트 1회 호출)
+    download_rule_file(fileNo, …)              — 내부규정 파일 다운로드 (v0.4.0)
 
 코어 라이브러리: ./alio_core.py (alio-crawler와 공유)
 """
@@ -32,7 +33,7 @@ from alio_core import (
     fetch_board_attachment_list, fetch_board_external_links,
     download_board_attachment as _core_download_board,
     download_attachment as _core_download_attachment,
-    fetch_all_rules, fetch_rule_detail, download_rule_file_to_path,
+    fetch_rule_list, fetch_all_rules, fetch_rule_detail, download_rule_file_to_path,
     fetch_all_board_items, sanitize_filename,
     RULE_DIVIS_CODES,
 )
@@ -535,22 +536,43 @@ def download_disclosure_attachment(
 # Tool 10: 기관 내부규정 목록 + 최신 파일 메타 (신규 v0.4.0)
 # ─────────────────────────────────────────────────────────────
 @mcp.tool()
-def list_rules(instName: str, divis: str = "") -> dict:
-    """기관 내부규정 목록을 전체 페이지 자동 순회로 조회.
+def list_rules(
+    instName: str,
+    divis: str = "",
+    count_only: bool = False,
+    include_files: bool = True,
+) -> dict:
+    """기관 내부규정 목록 조회 (성능 옵션 2종).
 
-    각 규정에 대해 findRuleDtl을 호출해 .zip을 제외한 **최신 파일 메타**까지
-    함께 반환한다. 반환된 latest.file_no를 download_rule_file에 그대로 전달
-    가능.
+    기본은 전체 페이지 순회 + 각 규정의 findRuleDtl 호출로 최신 파일 메타까지
+    반환한다 (다운로드 체인용). 다수 기관 카운트 집계 등 빠른 호출이 필요하면
+    count_only=True / include_files=False로 호출 횟수를 크게 줄일 수 있다.
 
     Args:
         instName: 기관명 (apbaNa 검색). 예: '한국산업단지공단', '한국전력공사'.
         divis: 분류 코드. 빈 문자열이면 전체.
                'K1500'(정관), 'K1100'(인사·복무·징계), 'K1200'(보수),
                'K1300'(직제), 'K1400'(기타).
+        count_only: True면 findRuleList 1페이지만 호출해 totalCnt만 반환.
+                    findRuleDtl·후속 페이지 호출 일체 없음. 다수 기관 카운트
+                    집계용 최고속 모드 (HTTP 1회).
+        include_files: False면 findRuleDtl 호출을 생략한다(파일 메타 없음).
+                       페이지 순회만 수행 → 호출 횟수를 페이지 수만큼으로 절감.
+                       다운로드가 필요 없는 목록 조회에 권장.
 
     Returns:
-        {"totalCnt", "분류명": divis_label, "규정": [{"seq", "title",
-         "insdRuleDivis", "files_count", "latest": {"file_no", "file_name"}}, ...]}
+        count_only=True:
+            {"instName", "totalCnt", "분류명"}
+        count_only=False, include_files=False:
+            {"totalCnt", "분류명", "규정": [{"seq", "title", "insdRuleDivis"}, ...]}
+        count_only=False, include_files=True (기본 — 풀스펙):
+            {"totalCnt", "분류명", "규정": [{"seq", "title", "insdRuleDivis",
+             "files_count", "latest": {"file_no", "file_name"}}, ...]}
+
+    호출 횟수 비교 (한국국토정보공사 158건 기준):
+        count_only=True             → 1회
+        include_files=False         → 16회 (페이지 수만)
+        기본(include_files=True)    → 174회 (페이지 16 + findRuleDtl 158)
     """
     if not instName:
         return {"error": "MISSING: instName이 필수입니다"}
@@ -561,11 +583,42 @@ def list_rules(instName: str, divis: str = "") -> dict:
         }
 
     sess = create_session()
+    divis_label = next((k for k, v in RULE_DIVIS_CODES.items() if v == divis), "전체")
+
+    if count_only:
+        first = fetch_rule_list(sess, instName, divis=divis, page=1)
+        if "error" in first and not first.get("result"):
+            return {
+                "error": f"FETCH_FAILED: {first.get('error')}",
+                "instName": instName,
+                "totalCnt": 0,
+                "분류명": divis_label,
+            }
+        return {
+            "instName": instName,
+            "totalCnt": first.get("totalCnt", 0),
+            "분류명": divis_label,
+        }
+
     rules = fetch_all_rules(sess, instName, divis=divis)
     if not rules:
         return {"error": f"NOT_FOUND: '{instName}' 내부규정 없음", "totalCnt": 0, "규정": []}
 
-    divis_label = next((k for k, v in RULE_DIVIS_CODES.items() if v == divis), "전체")
+    if not include_files:
+        result = [
+            {
+                "seq": r.get("seq", ""),
+                "title": r.get("title", ""),
+                "insdRuleDivis": r.get("insdRuleDivis", ""),
+            }
+            for r in rules
+        ]
+        return {
+            "totalCnt": len(result),
+            "분류명": divis_label,
+            "규정": result,
+        }
+
     result = []
     for r in rules:
         seq = r.get("seq", "")
