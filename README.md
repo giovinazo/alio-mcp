@@ -194,7 +194,23 @@ CRAWLER_DIR=/path/to/alio-crawler ./sync_to_crawler.sh
 
 매칭 실패 또는 인자 누락 시 모두 `{"error": "..."}` 시그널 반환 (NOT_FOUND·MISSING·HTTP·API_ERROR·DOWNLOAD_FAILED).
 
-## 설치
+## 시작하기 (초보자 가이드)
+
+MCP 서버는 단독 프로그램이 아니라 Claude에 붙이는 **확장 도구**다.
+아래 순서대로 따라하면 된다.
+
+### 선행 조건
+
+| 항목 | 설명 |
+|------|------|
+| Claude 구독 | Claude Pro($20/월) 이상, 또는 Anthropic API 키 |
+| Python | 3.10 이상 (`python3 --version`으로 확인) |
+| Claude 클라이언트 | **Claude Desktop** (GUI) 또는 **Claude Code** (CLI, `npm install -g @anthropic-ai/claude-code`) |
+
+> Claude Desktop은 [claude.ai/download](https://claude.ai/download)에서 받을 수 있다.
+> Claude Code는 Node.js 18+ 필요 → `npm install -g @anthropic-ai/claude-code`로 설치.
+
+### 1단계: 레포 클론 & 패키지 설치
 
 ```bash
 git clone https://github.com/giovinazo/alio-mcp.git
@@ -202,13 +218,16 @@ cd alio-mcp
 pip install -r requirements.txt
 ```
 
-요구사항: Python 3.10+, `mcp>=1.0.0`, `requests>=2.31.0`
+### 2단계: Claude에 MCP 서버 등록
 
-## 설정
+사용하는 클라이언트에 따라 **하나만** 선택한다.
 
-### Claude Desktop / Claude Code
+#### 방법 A — Claude Desktop (GUI 사용자)
 
-`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) 또는 `~/.claude/settings.local.json`(Claude Code)에 다음 추가:
+설정 파일을 열어 `mcpServers`에 추가한다.
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
@@ -222,7 +241,67 @@ pip install -r requirements.txt
 }
 ```
 
-전체 예시는 [`examples/`](./examples) 폴더 참조.
+> `/absolute/path/to/`를 실제 클론 경로로 바꿔야 한다. 예: `/Users/username/alio-mcp/alio_mcp.py`
+
+설정 후 Claude Desktop을 **재시작**하면 도구 아이콘(망치 모양)에 `alio` 서버가 표시된다.
+
+#### 방법 B — Claude Code (CLI 사용자)
+
+```bash
+# 프로젝트 설정 (.claude/settings.local.json)에 추가
+claude mcp add alio -- python3 /absolute/path/to/alio-mcp/alio_mcp.py
+```
+
+또는 `~/.claude/settings.local.json`을 직접 편집:
+
+```json
+{
+  "mcpServers": {
+    "alio": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["/absolute/path/to/alio-mcp/alio_mcp.py"]
+    }
+  }
+}
+```
+
+### 3단계: 동작 확인
+
+Claude에게 자연어로 물어본다:
+
+```
+"알리오 메뉴 목록 보여줘"
+```
+
+92개 메뉴가 표 형태로 나오면 성공이다.
+
+### 4단계 (선택): 에이전트 설정 — Claude Code 전용
+
+에이전트는 MCP 도구를 **자율적으로 조합**해 복잡한 수집 작업을 처리하는 서브에이전트다.
+Claude Code에서만 사용 가능하며, Claude Desktop에서는 지원하지 않는다.
+
+```bash
+# 에이전트 정의 파일을 Claude Code 에이전트 폴더에 복사
+mkdir -p ~/.claude/agents
+cp agents/alio-investigator.md ~/.claude/agents/
+```
+
+설정 후 Claude Code가 알리오 데이터 수집 작업을 위임할 때 자동으로 이 에이전트를 사용한다.
+
+> **에이전트가 할 수 있는 것**: 다수 기관·다수 항목 일괄 수집, 기관별 비교, CSV 인덱스 작성
+>
+> **에이전트가 할 수 없는 것**: 법령 해석, PDF 텍스트 추출, 보고서 작성 (메인 Claude에 재위임)
+
+### 단계별 추천
+
+| 수준 | 추천 |
+|------|------|
+| AI 처음 써봄 | 먼저 [알리오 크롤러(GUI)](https://github.com/giovinazo/alio-crawler)를 써보세요 |
+| Claude 쓸 줄 앎 | **방법 A** (Claude Desktop + MCP) — 자연어로 조회·다운로드 |
+| 터미널 익숙함 | **방법 B** (Claude Code + 에이전트) — 대량 수집·자동화 |
+
+전체 설정 예시는 [`examples/`](./examples) 폴더 참조.
 
 ## 사용 예시
 
@@ -257,7 +336,7 @@ Claude에서 자연어 한 줄로:
 | `GET /download/download.json?fileNo=N` | 게시판형 첨부 (패턴 B) | `download_board_attachment` |
 | `POST /organ/findOrganApbaList.json` | 공공기관 전체 목록 (지역 포함) | `search_organs` |
 
-보고서형 부속 첨부(`file.json`)·안전경영책임보고서(`dfile.json`)·내부규정(`rulefiledown.json`)은 후속 버전에서 도구로 추가 예정 (코어 함수 `download_attachment`는 이미 구현되어 있어 노출만 남음).
+보고서형 부속 첨부(`file.json`)·안전경영책임보고서(`dfile.json`)·내부규정(`rulefiledown.json`)은 v0.4.0에서 도구로 추가 완료.
 
 ## 라이선스
 
@@ -287,4 +366,4 @@ Claude에서 자연어 한 줄로:
 
 ---
 
-**English summary**: MCP server exposing the disclosure data of Korea's public institutions (ALIO). Provides 4 tools: menu listing, institution listing, board-type item listing, and report PDF download. v0.2.0.
+**English summary**: MCP server exposing the disclosure data of ~355 Korean public institutions via ALIO (alio.go.kr). 11 tools covering menu/institution lookup, board-type items, report PDF download, internal regulations, and file attachments. Includes a Claude Code sub-agent definition (`agents/alio-investigator.md`) for autonomous bulk data collection. v0.4.1.
