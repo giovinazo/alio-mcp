@@ -31,8 +31,8 @@ jobs:
 
       - name: MCP server starts (2s)
         run: |
-          timeout 2 python alio_mcp.py || code=$?
-          if [ "${code:-0}" -eq 124 ]; then
+          sleep 3 | timeout 2 python alio_mcp.py; code=$?
+          if [ "$code" -eq 124 ]; then
             echo "Server alive for 2s — OK"
           else
             echo "Server exited early (code $code)" && exit 1
