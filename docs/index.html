@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ALIO MCP</title>
+<title>ALIO — From Crawler to MCP</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
@@ -12,18 +12,21 @@
 :root {
   --bg: #0a0a0f;
   --surface: #12121a;
+  --surface2: #1a1a28;
   --border: #1e1e2e;
+  --border2: #2a2a3e;
   --text: #e0e0e8;
-  --text-dim: #6a6a80;
+  --text-dim: #8a8aa5;
   --accent: #6c8cff;
   --accent2: #a78bfa;
   --green: #4ade80;
   --red: #f87171;
   --orange: #fb923c;
   --cyan: #22d3ee;
+  --yellow: #fbbf24;
 }
 
-html { font-size: 16px; }
+html { font-size: 19px; }
 
 body {
   font-family: 'Noto Sans KR', sans-serif;
@@ -34,15 +37,64 @@ body {
   width: 100vw;
 }
 
-.presentation {
-  width: 100vw;
-  height: 100vh;
-  position: relative;
+/* ── Evolution Bar ── */
+.evo-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  background: rgba(10,10,15,0.88);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
 }
 
+.evo-phases { display: flex; align-items: center; }
+
+.evo-phase {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  transition: color 0.5s;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.evo-phase:hover { color: var(--text); }
+.evo-phase.active { color: var(--accent); }
+.evo-phase.done { color: var(--green); }
+
+.evo-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 0.5s, box-shadow 0.5s;
+  flex-shrink: 0;
+}
+
+.evo-phase.active .evo-dot { background: var(--accent); box-shadow: 0 0 8px rgba(108,140,255,0.5); }
+.evo-phase.done .evo-dot { background: var(--green); }
+
+.evo-line {
+  width: 20px; height: 2px;
+  background: var(--border);
+  transition: background 0.5s;
+  flex-shrink: 0;
+}
+
+.evo-line.filled { background: linear-gradient(90deg, var(--green), var(--accent)); }
+
+/* ── Presentation ── */
+.presentation { width: 100vw; height: 100vh; position: relative; }
+
 .slide {
-  position: absolute;
-  inset: 0;
+  position: absolute; inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -51,138 +103,503 @@ body {
   transform: translateY(30px);
   transition: opacity 0.8s ease, transform 0.8s ease;
   pointer-events: none;
-  padding: 2rem;
+  padding: 3.5rem 2rem 2rem;
 }
 
-.slide.active {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
+.slide.active { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.slide.exit { opacity: 0; transform: translateY(-30px); }
+
+.slide-title {
+  font-size: clamp(1.5rem, 3.5vw, 2.5rem);
+  font-weight: 700;
+  margin-bottom: 2rem;
+  text-align: center;
 }
 
-.slide.exit {
-  opacity: 0;
-  transform: translateY(-30px);
+.phase-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid;
+  border-radius: 100px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  margin-bottom: 1.2rem;
 }
 
-/* ── Slide 1: Intro ── */
-.intro-badge {
+.phase-badge.p0 { border-color: var(--accent2); color: var(--accent2); }
+.phase-badge.p1 { border-color: var(--red); color: var(--red); }
+.phase-badge.p2 { border-color: var(--orange); color: var(--orange); }
+.phase-badge.p3 { border-color: var(--accent); color: var(--accent); }
+.phase-badge.p4 { border-color: var(--green); color: var(--green); }
+
+/* ── Slide 0: Hero ── */
+.hero-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.4rem 1rem;
   border: 1px solid var(--border);
   border-radius: 100px;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--text-dim);
   margin-bottom: 2rem;
   opacity: 0;
   animation: fadeUp 0.6s 0.3s forwards;
 }
 
-.intro-badge .dot {
+.hero-badge .dot {
   width: 6px; height: 6px;
   background: var(--green);
   border-radius: 50%;
-  animation: pulse-dot 2s infinite;
+  animation: pulseDot 2s infinite;
 }
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
+@keyframes pulseDot { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 
-.intro-title {
-  font-size: clamp(2.5rem, 6vw, 5rem);
+.hero-title {
+  font-size: clamp(3rem, 7vw, 5.5rem);
   font-weight: 900;
   text-align: center;
-  line-height: 1.15;
+  line-height: 1.1;
   opacity: 0;
   animation: fadeUp 0.8s 0.5s forwards;
 }
 
-.intro-title .highlight {
+.hero-title .gradient {
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-.intro-sub {
-  font-size: clamp(1rem, 2vw, 1.4rem);
+.hero-arrow {
+  font-size: clamp(1.2rem, 2.5vw, 1.8rem);
+  font-weight: 300;
+  color: var(--text-dim);
+  margin-top: 0.3rem;
+  opacity: 0;
+  animation: fadeUp 0.8s 0.7s forwards;
+}
+
+.hero-arrow span { color: var(--accent); font-weight: 500; }
+
+.hero-sub {
+  font-size: clamp(0.95rem, 1.8vw, 1.3rem);
   color: var(--text-dim);
   margin-top: 1.5rem;
   text-align: center;
   font-weight: 300;
-  max-width: 600px;
   opacity: 0;
-  animation: fadeUp 0.8s 0.8s forwards;
+  animation: fadeUp 0.8s 0.9s forwards;
 }
 
-.intro-stats {
+.hero-stats {
   display: flex;
   gap: 3rem;
   margin-top: 3rem;
   opacity: 0;
-  animation: fadeUp 0.8s 1.1s forwards;
+  animation: fadeUp 0.8s 1.2s forwards;
 }
 
 .stat { text-align: center; }
 .stat-num {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 2.2rem;
+  font-size: 2rem;
   font-weight: 700;
   color: var(--accent);
 }
-.stat-label {
-  font-size: 0.85rem;
+.stat-label { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.2rem; }
+
+.nav-hint {
+  position: fixed;
+  bottom: 2.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
   color: var(--text-dim);
-  margin-top: 0.3rem;
+  opacity: 0;
+  animation: fadeUp 0.6s 2.5s forwards;
+  z-index: 100;
 }
 
-/* ── Slide 2: Before/After ── */
-.compare {
+.nav-hint span { display: inline-block; animation: bounce 2s infinite; }
+
+@keyframes bounce { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-4px); } }
+
+/* ── Slide 1: Why ── */
+.why-layout {
+  max-width: 800px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.8rem;
+}
+
+.why-cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-  max-width: 900px;
+  gap: 0.7rem;
   width: 100%;
 }
 
-.compare-card {
+.why-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 2rem;
+  border-radius: 12px;
+  padding: 1rem 1.2rem;
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
   opacity: 0;
 }
 
-.compare-card.before { animation: fadeLeft 0.6s 0.3s forwards; }
-.compare-card.after { animation: fadeRight 0.6s 0.6s forwards; }
+.why-num {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
 
-.compare-label {
+.why-actor {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.15rem;
+}
+
+.why-text {
+  font-size: 0.88rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.insight-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.insight-divider::before,
+.insight-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.insight-divider span {
+  white-space: nowrap;
+  padding: 0.2rem 0.7rem;
+  border: 1px dashed var(--accent);
+  border-radius: 100px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.insight-card {
+  background: rgba(108,140,255,0.05);
+  border: 2px solid rgba(108,140,255,0.25);
+  border-radius: 16px;
+  padding: 1.5rem 2rem;
+  text-align: center;
+  max-width: 540px;
+  opacity: 0;
+}
+
+.insight-text {
+  font-size: 1.15rem;
+  line-height: 1.7;
+}
+
+.insight-text strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.insight-footer {
+  margin-top: 0.8rem;
+  font-size: 0.88rem;
+  color: var(--green);
+  font-weight: 500;
+}
+
+/* ── Slide 2: Problem ── */
+.trigger-scene {
+  max-width: 860px;
+  width: 100%;
+  margin-bottom: 1.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.chat-bubble {
   display: inline-block;
-  padding: 0.25rem 0.75rem;
-  border-radius: 6px;
+  padding: 0.7rem 1.2rem;
+  border-radius: 16px;
+  font-size: 1rem;
+  line-height: 1.6;
+  max-width: 75%;
+  position: relative;
+  opacity: 0;
+}
+
+.chat-bubble.boss {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+.chat-bubble.boss .chat-name {
+  font-size: 0.72rem;
+  color: var(--orange);
+  font-weight: 600;
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.chat-bubble.me {
+  background: rgba(108,140,255,0.12);
+  border: 1px solid rgba(108,140,255,0.25);
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+}
+
+.chat-bubble.me .dots {
+  display: inline-block;
+  letter-spacing: 2px;
+  animation: typingDots 1.5s infinite;
+}
+
+@keyframes typingDots {
+  0%, 20% { opacity: 0.3; }
+  50% { opacity: 1; }
+  80%, 100% { opacity: 0.3; }
+}
+
+.trigger-arrow {
+  text-align: center;
+  color: var(--red);
+  font-size: 0.82rem;
+  font-weight: 600;
+  opacity: 0;
+}
+
+.problem-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  max-width: 860px;
+  width: 100%;
+}
+
+.problem-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.8rem;
+}
+
+.problem-card h3 { font-size: 1.15rem; margin-bottom: 1rem; font-weight: 700; }
+
+.manual-steps { list-style: none; }
+.manual-steps li {
+  padding: 0.35rem 0;
+  font-size: 0.92rem;
+  color: var(--text-dim);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  line-height: 1.5;
+}
+
+.manual-steps li .num {
+  font-family: 'JetBrains Mono', monospace;
   font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 1.2rem;
+  color: var(--red);
+  background: rgba(248,113,113,0.1);
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
 }
 
-.before .compare-label { background: rgba(248,113,113,0.15); color: var(--red); }
-.after .compare-label { background: rgba(74,222,128,0.15); color: var(--green); }
-
-.compare-title {
-  font-size: 1.3rem;
-  font-weight: 700;
-  margin-bottom: 1rem;
+.calc-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
 }
 
-.step-list { list-style: none; }
-.step-list li {
-  padding: 0.5rem 0;
+.calc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.45rem 0;
+  font-size: 0.92rem;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.calc-row:last-child { border: none; }
+
+.calc-row .val {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+}
+
+.calc-row.total .val { color: var(--red); font-size: 1.15rem; }
+
+.time-emphasis {
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--red);
+  margin-top: 1.2rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.time-emphasis small {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-weight: 400;
+  font-family: 'Noto Sans KR', sans-serif;
+  margin-top: 0.3rem;
+}
+
+/* ── Slide 3: Crawler ── */
+.crawler-layout {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 2rem;
+  max-width: 880px;
+  width: 100%;
+  align-items: start;
+}
+
+.gui-mockup {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+}
+
+.gui-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+
+.gui-dots { display: flex; gap: 6px; }
+.gui-dot { width: 10px; height: 10px; border-radius: 50%; }
+.gui-dot.r { background: #ff5f57; }
+.gui-dot.y { background: #febc2e; }
+.gui-dot.g { background: #28c840; }
+
+.gui-title-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.gui-toolbar {
+  display: flex;
+  gap: 0.4rem;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.gui-btn {
+  padding: 0.3rem 0.6rem;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  font-family: 'Noto Sans KR', sans-serif;
+}
+
+.gui-btn.primary { border-color: var(--accent); color: var(--accent); }
+
+.gui-treeview {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tree-row {
+  display: grid;
+  grid-template-columns: 20px 1fr 90px 44px;
+  padding: 3px 0;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+  gap: 4px;
+  align-items: center;
+}
+
+.tree-check { color: var(--green); }
+.tree-check.off { color: var(--text-dim); }
+.tree-item-col { font-family: 'Noto Sans KR', sans-serif; color: var(--text); font-size: 0.78rem; }
+
+.gui-progress { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+
+.progress-track { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+
+.progress-fill {
+  height: 100%;
+  width: 72%;
+  background: linear-gradient(90deg, var(--accent), var(--green));
+  border-radius: 3px;
+  animation: progressPulse 2s ease-in-out infinite;
+}
+
+@keyframes progressPulse { 0%,100% { opacity:1; } 50% { opacity:0.7; } }
+
+.progress-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+  text-align: right;
+}
+
+.gui-log {
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  line-height: 1.7;
+  color: var(--text-dim);
+}
+
+.log-ok { color: var(--green); }
+
+.feature-list { list-style: none; }
+
+.feature-list li {
+  padding: 0.4rem 0;
   font-size: 0.9rem;
   color: var(--text-dim);
   display: flex;
@@ -190,91 +607,217 @@ body {
   gap: 0.5rem;
   line-height: 1.5;
 }
-.step-list li::before {
-  content: attr(data-icon);
+
+.feature-list li .icon {
+  color: var(--orange);
   flex-shrink: 0;
-  font-size: 1rem;
+  font-size: 0.85rem;
+  margin-top: 0.1rem;
 }
 
-.slide-title {
-  font-size: clamp(1.5rem, 3.5vw, 2.5rem);
-  font-weight: 700;
-  margin-bottom: 2.5rem;
-  text-align: center;
-  opacity: 0;
-  animation: fadeUp 0.6s 0.2s forwards;
-}
+.feature-list li strong { color: var(--text); font-weight: 500; }
 
-/* ── Slide 3: Tools ── */
-.tools-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.8rem;
-  max-width: 860px;
+/* ── Slide 4: How it Works ── */
+.works-content {
+  max-width: 900px;
   width: 100%;
 }
 
-.tool-card {
+.pipeline {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  margin-bottom: 1.8rem;
+}
+
+.pipe-step { flex: 1; max-width: 155px; }
+
+.pipe-box {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1rem 1.1rem;
-  opacity: 0;
-  transform: scale(0.9);
-  transition: transform 0.3s, border-color 0.3s, box-shadow 0.3s;
+  border: 2px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem 0.7rem;
+  text-align: center;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  transition: border-color 0.3s, box-shadow 0.3s;
 }
 
-.tool-card:hover {
-  border-color: var(--accent);
-  transform: scale(1.03);
-  box-shadow: 0 0 20px rgba(108,140,255,0.1);
-}
-
-.tool-num {
+.pipe-icon {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.7rem;
-  color: var(--text-dim);
-  margin-bottom: 0.4rem;
-}
-
-.tool-name {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: var(--accent);
-  margin-bottom: 0.4rem;
-  word-break: break-all;
-}
-
-.tool-desc {
   font-size: 0.75rem;
+  font-weight: 700;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.2rem;
+}
+
+.pipe-label { font-size: 0.95rem; font-weight: 600; }
+.pipe-detail { font-size: 0.78rem; color: var(--text-dim); }
+
+.pipe-example {
+  font-size: 0.72rem;
   color: var(--text-dim);
+  font-style: italic;
+  margin-top: 0.2rem;
   line-height: 1.4;
 }
 
-.tool-tag {
-  display: inline-block;
-  font-size: 0.6rem;
-  padding: 0.15rem 0.4rem;
-  border-radius: 4px;
-  margin-top: 0.4rem;
-  font-weight: 500;
+.pipe-box.b-user { border-color: var(--text-dim); }
+.pipe-box.b-user .pipe-icon { background: rgba(224,224,232,0.1); color: var(--text); }
+
+.pipe-box.b-ai { border-color: var(--accent2); }
+.pipe-box.b-ai .pipe-icon { background: rgba(167,139,250,0.15); color: var(--accent2); }
+.pipe-box.b-ai:hover { box-shadow: 0 0 20px rgba(167,139,250,0.15); }
+
+.pipe-box.b-mcp { border-color: var(--accent); }
+.pipe-box.b-mcp .pipe-icon { background: rgba(108,140,255,0.15); color: var(--accent); }
+.pipe-box.b-mcp:hover { box-shadow: 0 0 20px rgba(108,140,255,0.15); }
+
+.pipe-box.b-api { border-color: var(--orange); }
+.pipe-box.b-api .pipe-icon { background: rgba(251,146,60,0.15); color: var(--orange); }
+
+.pipe-box.b-out { border-color: var(--green); }
+.pipe-box.b-out .pipe-icon { background: rgba(74,222,128,0.15); color: var(--green); }
+.pipe-box.b-out:hover { box-shadow: 0 0 20px rgba(74,222,128,0.15); }
+
+.pipe-conn {
+  width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
 }
 
-.tag-query { background: rgba(108,140,255,0.15); color: var(--accent); }
-.tag-download { background: rgba(74,222,128,0.15); color: var(--green); }
-.tag-new { background: rgba(251,146,60,0.15); color: var(--orange); }
+.pipe-conn-line {
+  width: 100%;
+  height: 3px;
+  background: var(--border2);
+  position: relative;
+  overflow: hidden;
+  border-radius: 2px;
+}
 
-/* ── Slide 4: Demo ── */
+.pipe-conn-line::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: dataFlow 2s linear infinite;
+}
+
+.pipe-conn-line::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 4px solid transparent;
+  border-left-color: var(--accent);
+}
+
+@keyframes dataFlow {
+  0% { background-position: 200% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.tool-cats {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.tool-cat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem 1.1rem;
+  flex: 1;
+  max-width: 420px;
+}
+
+.cat-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.cat-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.cat-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.cat-query .cat-label { color: var(--accent); }
+.cat-query .cat-count { background: rgba(108,140,255,0.15); color: var(--accent); }
+.cat-dl .cat-label { color: var(--green); }
+.cat-dl .cat-count { background: rgba(74,222,128,0.15); color: var(--green); }
+
+.cat-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.cat-pills span {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(108,140,255,0.08);
+  color: var(--accent);
+  border: 1px solid rgba(108,140,255,0.15);
+}
+
+.cat-dl .cat-pills span {
+  background: rgba(74,222,128,0.08);
+  color: var(--green);
+  border-color: rgba(74,222,128,0.15);
+}
+
+.works-note {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin-top: 1.5rem;
+  line-height: 1.5;
+}
+
+.works-note code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  padding: 0.12rem 0.4rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--cyan);
+}
+
+/* ── Slide 5: Demo ── */
+.demo-layout { max-width: 780px; width: 100%; }
+
 .terminal {
   background: #1a1a2e;
   border: 1px solid var(--border);
   border-radius: 12px;
-  max-width: 750px;
-  width: 100%;
   overflow: hidden;
-  opacity: 0;
-  animation: fadeUp 0.6s 0.3s forwards;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.4);
 }
 
 .terminal-bar {
@@ -286,17 +829,14 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-.terminal-dot {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-}
+.terminal-dot { width: 10px; height: 10px; border-radius: 50%; }
 .terminal-dot.r { background: #ff5f57; }
 .terminal-dot.y { background: #febc2e; }
 .terminal-dot.g { background: #28c840; }
 
 .terminal-title {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-dim);
   margin-left: 0.5rem;
 }
@@ -304,107 +844,97 @@ body {
 .terminal-body {
   padding: 1.5rem;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   line-height: 1.8;
-  min-height: 300px;
+  min-height: 270px;
 }
 
-.term-prompt {
-  color: var(--green);
-}
-.term-prompt::before {
-  content: '$ ';
-  color: var(--accent);
-}
+.term-prompt { color: var(--green); }
+.term-prompt::before { content: '$ '; color: var(--accent); }
+.term-cmd { color: var(--text); }
 
-.term-cmd {
-  color: var(--text);
-}
-
-.term-output {
-  color: var(--text-dim);
-  padding-left: 0;
-}
-
-.term-line {
-  opacity: 0;
-  transform: translateX(-5px);
-}
+.term-line { opacity: 0; transform: translateX(-5px); }
 
 .cursor {
   display: inline-block;
-  width: 8px;
-  height: 1.1em;
+  width: 8px; height: 1.1em;
   background: var(--accent);
   vertical-align: text-bottom;
   animation: blink 1s step-end infinite;
 }
 
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+@keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+
+.demo-sub {
+  text-align: center;
+  font-size: 0.92rem;
+  color: var(--text-dim);
+  margin-top: 1.5rem;
+  line-height: 1.6;
 }
 
-/* ── Slide 5: Setup ── */
-.setup-steps {
-  display: flex;
+.demo-sub strong { color: var(--green); font-weight: 600; }
+
+/* ── Slide 6: CTA ── */
+.cta-repos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 1.5rem;
-  max-width: 900px;
+  max-width: 700px;
   width: 100%;
+  margin-bottom: 1.5rem;
 }
 
-.setup-card {
-  flex: 1;
+.repo-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 1.8rem;
-  text-align: center;
-  opacity: 0;
-}
-
-.setup-num {
-  width: 40px; height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 1.1rem;
-  margin: 0 auto 1rem;
-}
-
-.setup-card h3 {
-  font-size: 1rem;
-  margin-bottom: 0.7rem;
-}
-
-.setup-card p {
-  font-size: 0.82rem;
-  color: var(--text-dim);
-  line-height: 1.5;
-}
-
-.setup-card code {
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.3s, transform 0.3s, box-shadow 0.3s;
   display: block;
-  background: #0a0a12;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.6rem;
-  margin-top: 0.8rem;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.72rem;
-  color: var(--cyan);
-  text-align: left;
-  word-break: break-all;
 }
 
-.cta-row {
-  margin-top: 2.5rem;
-  opacity: 0;
+.repo-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(108,140,255,0.15);
 }
+
+.repo-icon { font-size: 1.4rem; margin-bottom: 0.8rem; display: block; }
+
+.repo-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.repo-desc { font-size: 0.88rem; color: var(--text-dim); line-height: 1.5; margin-bottom: 0.8rem; }
+
+.repo-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.setup-mini {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.3rem;
+  max-width: 500px;
+  width: 100%;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--cyan);
+  line-height: 1.8;
+}
+
+.setup-mini .comment { color: var(--text-dim); }
 
 .cta-btn {
   display: inline-block;
@@ -416,77 +946,42 @@ body {
   border-radius: 100px;
   text-decoration: none;
   transition: transform 0.2s, box-shadow 0.2s;
-}
-.cta-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(108,140,255,0.3);
+  margin-top: 1.5rem;
 }
 
-/* ── Progress & Nav ── */
-.progress-bar {
-  position: fixed;
-  top: 0; left: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--accent2));
-  transition: width 0.5s ease;
-  z-index: 100;
-}
+.cta-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(108,140,255,0.3); }
 
+/* ── Navigation ── */
 .nav-dots {
   position: fixed;
-  right: 1.5rem;
+  right: 1.2rem;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   z-index: 100;
 }
 
 .nav-dot {
-  width: 8px; height: 8px;
+  width: 7px; height: 7px;
   border-radius: 50%;
   background: var(--border);
   cursor: pointer;
   transition: background 0.3s, transform 0.3s;
 }
 
-.nav-dot.active {
-  background: var(--accent);
-  transform: scale(1.4);
-}
+.nav-dot.active { background: var(--accent); transform: scale(1.5); }
 
 .slide-counter {
   position: fixed;
-  bottom: 1.5rem;
+  bottom: 1rem;
   left: 50%;
   transform: translateX(-50%);
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-dim);
   z-index: 100;
-}
-
-.nav-hint {
-  position: fixed;
-  bottom: 3rem;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.75rem;
-  color: var(--text-dim);
-  opacity: 0;
-  animation: fadeUp 0.6s 2s forwards;
-  z-index: 100;
-}
-
-.nav-hint span {
-  display: inline-block;
-  animation: bounce 2s infinite;
-}
-
-@keyframes bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
 }
 
 /* ── Animations ── */
@@ -506,208 +1001,331 @@ body {
 }
 
 @keyframes popIn {
-  from { opacity: 0; transform: scale(0.8); }
+  from { opacity: 0; transform: scale(0.85); }
   to { opacity: 1; transform: scale(1); }
 }
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-  .compare { grid-template-columns: 1fr; }
-  .tools-grid { grid-template-columns: repeat(2, 1fr); }
-  .setup-steps { flex-direction: column; }
-  .intro-stats { gap: 1.5rem; }
+  .why-cards { grid-template-columns: 1fr; }
+  .problem-grid { grid-template-columns: 1fr; }
+  .crawler-layout { grid-template-columns: 1fr; }
+  .pipeline { flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
+  .pipe-conn { width: 20px; }
+  .pipe-step { max-width: 130px; }
+  .tool-cats { flex-direction: column; }
+  .cta-repos { grid-template-columns: 1fr; }
+  .hero-stats { gap: 1.5rem; flex-wrap: wrap; justify-content: center; }
+  .evo-bar { display: none; }
 }
 </style>
 </head>
 <body>
 
-<div class="progress-bar" id="progress"></div>
+<!-- Evolution Bar -->
+<div class="evo-bar">
+  <div class="evo-phases" id="evoPhases">
+    <div class="evo-phase" data-phase="0" onclick="goTo(1)"><div class="evo-dot"></div>동기</div>
+    <div class="evo-line"></div>
+    <div class="evo-phase" data-phase="1" onclick="goTo(2)"><div class="evo-dot"></div>문제</div>
+    <div class="evo-line"></div>
+    <div class="evo-phase" data-phase="2" onclick="goTo(3)"><div class="evo-dot"></div>크롤러</div>
+    <div class="evo-line"></div>
+    <div class="evo-phase" data-phase="3" onclick="goTo(4)"><div class="evo-dot"></div>작동방식</div>
+    <div class="evo-line"></div>
+    <div class="evo-phase" data-phase="4" onclick="goTo(5)"><div class="evo-dot"></div>AI 에이전트</div>
+  </div>
+</div>
 
 <div class="nav-dots" id="navDots"></div>
 
 <div class="presentation" id="presentation">
 
-  <!-- Slide 1: Intro -->
+  <!-- ═══ Slide 0: Hero ═══ -->
   <div class="slide active" data-slide="0">
-    <div class="intro-badge">
-      <span class="dot"></span>
-      MCP Server v0.4.1
+    <div class="hero-badge"><span class="dot"></span>Open Source &middot; Python</div>
+    <h1 class="hero-title"><span class="gradient">ALIO</span></h1>
+    <div class="hero-arrow">Crawler <span>&rarr;</span> MCP</div>
+    <p class="hero-sub">공공기관 경영정보, 수집에서 비교&middot;분석까지</p>
+    <div class="hero-stats">
+      <div class="stat"><div class="stat-num">355</div><div class="stat-label">공공기관</div></div>
+      <div class="stat"><div class="stat-num">92</div><div class="stat-label">공시 항목</div></div>
+      <div class="stat"><div class="stat-num">7.8K</div><div class="stat-label">Lines</div></div>
+      <div class="stat"><div class="stat-num">11</div><div class="stat-label">MCP 도구</div></div>
     </div>
-    <h1 class="intro-title">
-      <span class="highlight">ALIO</span> MCP
-    </h1>
-    <p class="intro-sub">
-      AI가 공공기관 데이터를 직접 다룬다
-    </p>
-    <div class="intro-stats">
-      <div class="stat">
-        <div class="stat-num">355</div>
-        <div class="stat-label">공공기관</div>
-      </div>
-      <div class="stat">
-        <div class="stat-num">92</div>
-        <div class="stat-label">공시 메뉴</div>
-      </div>
-      <div class="stat">
-        <div class="stat-num">11</div>
-        <div class="stat-label">MCP 도구</div>
-      </div>
-    </div>
-    <div class="nav-hint"><span>scroll or click to continue</span></div>
+    <div class="nav-hint"><span>scroll or arrow keys</span></div>
   </div>
 
-  <!-- Slide 2: Before/After -->
+  <!-- ═══ Slide 1: Why ═══ -->
   <div class="slide" data-slide="1">
-    <div class="slide-title">Before &amp; After</div>
-    <div class="compare">
-      <div class="compare-card before">
-        <span class="compare-label">Before</span>
-        <div class="compare-title">수작업 반복</div>
-        <ul class="step-list">
-          <li data-icon="1.">alio.go.kr 접속</li>
-          <li data-icon="2.">메뉴 선택 (92개 중 탐색)</li>
-          <li data-icon="3.">기관 선택 (355개 스크롤)</li>
-          <li data-icon="4.">연도/분기 지정</li>
-          <li data-icon="5.">PDF 다운로드 클릭</li>
-          <li data-icon="6.">다른 기관? 2~5 반복</li>
-          <li data-icon="7.">엑셀에 수동 정리</li>
-        </ul>
+    <div class="phase-badge p0">동기</div>
+    <div class="slide-title">알리오 생태계, 그리고 질문 하나</div>
+    <div class="why-layout">
+      <div class="why-cards" id="whyCards">
+        <div class="why-card">
+          <div class="why-num">1</div>
+          <div>
+            <div class="why-actor">알리오</div>
+            <div class="why-text">355개 공공기관의 경영정보를 국민에게 투명하게 공개하는 플랫폼</div>
+          </div>
+        </div>
+        <div class="why-card">
+          <div class="why-num">2</div>
+          <div>
+            <div class="why-actor">공공기관</div>
+            <div class="why-text">공공재정이 투입되는 만큼 책무성을 가지고 92개 항목을 의무 공시</div>
+          </div>
+        </div>
+        <div class="why-card">
+          <div class="why-num">3</div>
+          <div>
+            <div class="why-actor">국민</div>
+            <div class="why-text">공시된 정보를 통해 공공기관 운영을 감시하고 견제</div>
+          </div>
+        </div>
+        <div class="why-card">
+          <div class="why-num">4</div>
+          <div>
+            <div class="why-actor">국회&middot;감사원</div>
+            <div class="why-text">국민을 대신하여 공공기관을 감시&middot;감독</div>
+          </div>
+        </div>
       </div>
-      <div class="compare-card after">
-        <span class="compare-label">After</span>
-        <div class="compare-title">자연어 한 줄</div>
-        <ul class="step-list">
-          <li data-icon=">">"산단공이랑 정원 비슷한 기관 5곳 임직원수 비교해줘"</li>
-          <li data-icon=">">"최근 감사원 지적사항 첨부 PDF 다 받아줘"</li>
-          <li data-icon=">">"위탁집행형 49곳 내부규정 수 집계해줘"</li>
-          <li data-icon=">">"산단공 정관 최신 HWP 받아줘"</li>
-        </ul>
+
+      <div class="insight-divider"><span>여기서 질문</span></div>
+
+      <div class="insight-card" id="insightCard">
+        <div class="insight-text">
+          공공기관도 다른 기관의 경영정보를<br>
+          <strong>서로 비교하여 개선점을 찾을 수 있지 않을까?</strong>
+        </div>
+        <div class="insight-footer">&rarr; 이 질문이 ALIO MCP의 출발점이다</div>
       </div>
     </div>
   </div>
 
-  <!-- Slide 3: Tools -->
+  <!-- ═══ Slide 2: Problem ═══ -->
   <div class="slide" data-slide="2">
-    <div class="slide-title">11개 도구</div>
-    <div class="tools-grid">
-      <div class="tool-card">
-        <div class="tool-num">#1</div>
-        <div class="tool-name">list_menus</div>
-        <div class="tool-desc">92개 메뉴 조회</div>
-        <span class="tool-tag tag-query">조회</span>
+    <div class="phase-badge p1">문제</div>
+    <div class="trigger-scene" id="triggerScene">
+      <div class="chat-bubble boss">
+        <span class="chat-name">팀장</span>
+        다른 기관은 어때? 비슷한 규모 기관 사례 좀 찾아봐.
       </div>
-      <div class="tool-card">
-        <div class="tool-num">#2</div>
-        <div class="tool-name">list_organs</div>
-        <div class="tool-desc">메뉴별 기관 ~355개</div>
-        <span class="tool-tag tag-query">조회</span>
+      <div class="chat-bubble me">
+        (알리오 들어가서 하나하나 찾아야 하는데<span class="dots">...</span>)
       </div>
-      <div class="tool-card">
-        <div class="tool-num">#3</div>
-        <div class="tool-name">search_organs</div>
-        <div class="tool-desc">기관명 부분 검색</div>
-        <span class="tool-tag tag-query">조회</span>
+      <div class="trigger-arrow">&darr; 그래서 시작되는 수작업</div>
+    </div>
+    <div class="problem-grid">
+      <div class="problem-card" id="problemBefore">
+        <h3>수작업 흐름</h3>
+        <ul class="manual-steps">
+          <li><span class="num">1</span>alio.go.kr 접속</li>
+          <li><span class="num">2</span>메뉴 선택 (92개 중 탐색)</li>
+          <li><span class="num">3</span>기관 선택 (355개 스크롤)</li>
+          <li><span class="num">4</span>연도/분기 지정</li>
+          <li><span class="num">5</span>PDF 다운로드 클릭</li>
+          <li><span class="num">6</span>다른 기관? 2~5 반복</li>
+          <li><span class="num">7</span>엑셀에 수동 정리</li>
+        </ul>
       </div>
-      <div class="tool-card">
-        <div class="tool-num">#4</div>
-        <div class="tool-name">list_board_items</div>
-        <div class="tool-desc">게시판형 자료 1페이지</div>
-        <span class="tool-tag tag-query">조회</span>
-      </div>
-      <div class="tool-card">
-        <div class="tool-num">#5</div>
-        <div class="tool-name">list_all_board_items</div>
-        <div class="tool-desc">전체 페이지 자동 순회</div>
-        <span class="tool-tag tag-new">v0.4</span>
-      </div>
-      <div class="tool-card">
-        <div class="tool-num">#6</div>
-        <div class="tool-name">list_board_attachments</div>
-        <div class="tool-desc">첨부파일 메타 추출</div>
-        <span class="tool-tag tag-query">조회</span>
-      </div>
-      <div class="tool-card">
-        <div class="tool-num">#7</div>
-        <div class="tool-name">download_report</div>
-        <div class="tool-desc">공시 보고서 PDF</div>
-        <span class="tool-tag tag-download">다운로드</span>
-      </div>
-      <div class="tool-card">
-        <div class="tool-num">#8</div>
-        <div class="tool-name">download_board_attachment</div>
-        <div class="tool-desc">게시판 첨부 다운로드</div>
-        <span class="tool-tag tag-download">다운로드</span>
-      </div>
-      <div class="tool-card">
-        <div class="tool-num">#9</div>
-        <div class="tool-name">download_disclosure_attachment</div>
-        <div class="tool-desc">보고서 부속 첨부</div>
-        <span class="tool-tag tag-download">다운로드</span>
-      </div>
-      <div class="tool-card">
-        <div class="tool-num">#10</div>
-        <div class="tool-name">list_rules</div>
-        <div class="tool-desc">내부규정 목록 + 파일 메타</div>
-        <span class="tool-tag tag-new">v0.4</span>
-      </div>
-      <div class="tool-card">
-        <div class="tool-num">#11</div>
-        <div class="tool-name">download_rule_file</div>
-        <div class="tool-desc">내부규정 HWP 다운로드</div>
-        <span class="tool-tag tag-download">다운로드</span>
-      </div>
-      <div class="tool-card" style="border-style:dashed;display:flex;align-items:center;justify-content:center;">
-        <div class="tool-desc" style="text-align:center;color:var(--accent);">+ more coming</div>
+      <div class="problem-card" id="problemCalc">
+        <h3>소요 시간</h3>
+        <div class="calc-box">
+          <div class="calc-row"><span>1기관 1항목</span><span class="val">~5분</span></div>
+          <div class="calc-row"><span>공공기관 수</span><span class="val">355개</span></div>
+          <div class="calc-row"><span>공시 항목</span><span class="val">92개</span></div>
+          <div class="calc-row total"><span>전수 조사</span><span class="val">~2,722시간</span></div>
+        </div>
+        <div class="time-emphasis">340일<small>하루 8시간, 주5일 기준</small></div>
       </div>
     </div>
   </div>
 
-  <!-- Slide 4: Demo -->
+  <!-- ═══ Slide 3: Crawler ═══ -->
   <div class="slide" data-slide="3">
-    <div class="slide-title">Demo</div>
-    <div class="terminal">
-      <div class="terminal-bar">
-        <div class="terminal-dot r"></div>
-        <div class="terminal-dot y"></div>
-        <div class="terminal-dot g"></div>
-        <span class="terminal-title">Claude Code</span>
+    <div class="phase-badge p2">Phase 1 &mdash; GUI 크롤러</div>
+    <div class="slide-title">ALIO Crawler v5.4.1</div>
+    <div class="crawler-layout">
+      <div class="gui-mockup" id="guiMockup">
+        <div class="gui-titlebar">
+          <div class="gui-dots"><div class="gui-dot r"></div><div class="gui-dot y"></div><div class="gui-dot g"></div></div>
+          <span class="gui-title-text">ALIO Crawler v5.4.1</span>
+        </div>
+        <div class="gui-toolbar">
+          <div class="gui-btn">기관유형 &#9662;</div>
+          <div class="gui-btn">주무부처 &#9662;</div>
+          <div class="gui-btn primary">공시항목 선택...</div>
+          <div class="gui-btn primary">1.기관목록수집</div>
+          <div class="gui-btn primary">2.공시내용수집</div>
+          <div class="gui-btn">3.엑셀저장</div>
+        </div>
+        <div class="gui-treeview">
+          <div class="tree-row"><span class="tree-check">&#9745;</span><span class="tree-item-col">한국산업단지공단</span><span>임직원 수</span><span>2025</span></div>
+          <div class="tree-row"><span class="tree-check">&#9745;</span><span class="tree-item-col">한국무역보험공사</span><span>내부규정</span><span>2025</span></div>
+          <div class="tree-row"><span class="tree-check off">&#9744;</span><span class="tree-item-col">한국전력공사</span><span>감사원 지적</span><span>2025</span></div>
+          <div class="tree-row"><span class="tree-check off">&#9744;</span><span class="tree-item-col">한국수자원공사</span><span>이사회 의결</span><span>2025</span></div>
+        </div>
+        <div class="gui-progress">
+          <div class="progress-track"><div class="progress-fill"></div></div>
+          <div class="progress-text">72% &middot; 256/355 기관 완료</div>
+        </div>
+        <div class="gui-log">
+          <div>[14:32] 한국산업단지공단 &gt; 내부규정 38건 수집</div>
+          <div class="log-ok">[14:33] &#10003; 정관.pdf (127KB)</div>
+          <div class="log-ok">[14:33] &#10003; 인사규정.hwp (89KB)</div>
+          <div class="log-ok">[14:34] &#10003; 보수규정.pdf (203KB)</div>
+        </div>
       </div>
-      <div class="terminal-body" id="termBody">
+      <div>
+        <ul class="feature-list">
+          <li><span class="icon">&#9654;</span><strong>92개 전항목</strong> 자동 수집</li>
+          <li><span class="icon">&#9654;</span><strong>다중 기관</strong> 일괄 다운로드</li>
+          <li><span class="icon">&#9654;</span>PDF/HWP/Excel <strong>5종 엔드포인트</strong></li>
+          <li><span class="icon">&#9654;</span>ThreadPool <strong>5배 속도</strong></li>
+          <li><span class="icon">&#9654;</span>게시판형 <strong>첨부 자동 파싱</strong></li>
+          <li><span class="icon">&#9654;</span>내부규정 <strong>3단계 체인</strong></li>
+          <li><span class="icon">&#9654;</span>순수 <strong>tkinter</strong> + 의존성 3개</li>
+        </ul>
       </div>
     </div>
   </div>
 
-  <!-- Slide 5: Setup -->
+  <!-- ═══ Slide 4: How it Works ═══ -->
   <div class="slide" data-slide="4">
-    <div class="slide-title">3단계로 시작</div>
-    <div class="setup-steps">
-      <div class="setup-card">
-        <div class="setup-num">1</div>
-        <h3>클론 & 설치</h3>
-        <p>레포를 받고 의존성을 설치한다</p>
-        <code>git clone github.com/giovinazo/alio-mcp<br>pip install -r requirements.txt</code>
+    <div class="phase-badge p3">Phase 2 &mdash; MCP</div>
+    <div class="slide-title">어떻게 동작하는가</div>
+    <div class="works-content">
+
+      <div class="pipeline" id="pipeline">
+        <div class="pipe-step">
+          <div class="pipe-box b-user">
+            <div class="pipe-icon">?</div>
+            <div class="pipe-label">자연어 질의</div>
+            <div class="pipe-example">"산단공이랑 비슷한<br>기관 5곳 비교해줘"</div>
+          </div>
+        </div>
+        <div class="pipe-conn"><div class="pipe-conn-line"></div></div>
+        <div class="pipe-step">
+          <div class="pipe-box b-ai">
+            <div class="pipe-icon">AI</div>
+            <div class="pipe-label">Claude</div>
+            <div class="pipe-detail">도구 선택&middot;조합</div>
+          </div>
+        </div>
+        <div class="pipe-conn"><div class="pipe-conn-line"></div></div>
+        <div class="pipe-step">
+          <div class="pipe-box b-mcp">
+            <div class="pipe-icon">MCP</div>
+            <div class="pipe-label">alio-mcp</div>
+            <div class="pipe-detail">11개 도구 실행</div>
+          </div>
+        </div>
+        <div class="pipe-conn"><div class="pipe-conn-line"></div></div>
+        <div class="pipe-step">
+          <div class="pipe-box b-api">
+            <div class="pipe-icon">API</div>
+            <div class="pipe-label">alio.go.kr</div>
+            <div class="pipe-detail">데이터 반환</div>
+          </div>
+        </div>
+        <div class="pipe-conn"><div class="pipe-conn-line"></div></div>
+        <div class="pipe-step">
+          <div class="pipe-box b-out">
+            <div class="pipe-icon">OK</div>
+            <div class="pipe-label">구조화 답변</div>
+            <div class="pipe-detail">비교&middot;분석&middot;파일</div>
+          </div>
+        </div>
       </div>
-      <div class="setup-card">
-        <div class="setup-num">2</div>
-        <h3>MCP 서버 등록</h3>
-        <p>Claude Desktop 또는 Claude Code 설정에 추가</p>
-        <code>"alio": {<br>&nbsp;&nbsp;"command": "python3",<br>&nbsp;&nbsp;"args": ["alio_mcp.py"]<br>}</code>
+
+      <div class="tool-cats" id="toolCats">
+        <div class="tool-cat cat-query">
+          <div class="cat-head">
+            <div class="cat-label">조회</div>
+            <div class="cat-count">7</div>
+          </div>
+          <div class="cat-pills">
+            <span>list_menus</span>
+            <span>list_organs</span>
+            <span>search_organs</span>
+            <span>list_board_items</span>
+            <span>list_all_board_items</span>
+            <span>list_board_attachments</span>
+            <span>list_rules</span>
+          </div>
+        </div>
+        <div class="tool-cat cat-dl">
+          <div class="cat-head">
+            <div class="cat-label">다운로드</div>
+            <div class="cat-count">4</div>
+          </div>
+          <div class="cat-pills">
+            <span>download_report</span>
+            <span>download_board_attachment</span>
+            <span>download_disclosure_att...</span>
+            <span>download_rule_file</span>
+          </div>
+        </div>
       </div>
-      <div class="setup-card">
-        <div class="setup-num">3</div>
-        <h3>자연어로 사용</h3>
-        <p>Claude에게 알리오 데이터를 요청하면 끝</p>
-        <code>"산단공 감사원 지적사항 PDF 다 받아줘"</code>
+
+      <div class="works-note">
+        GUI 크롤러와 MCP 서버는 <code>alio_core.py</code> 924줄을 공유한다 (truth source).
       </div>
     </div>
-    <div class="cta-row">
-      <a class="cta-btn" href="https://github.com/giovinazo/alio-mcp" target="_blank">GitHub에서 시작하기</a>
+  </div>
+
+  <!-- ═══ Slide 5: Demo ═══ -->
+  <div class="slide" data-slide="5">
+    <div class="phase-badge p4">Phase 3 &mdash; AI 에이전트</div>
+    <div class="slide-title">자연어로 기관 간 비교</div>
+    <div class="demo-layout">
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dot r"></div>
+          <div class="terminal-dot y"></div>
+          <div class="terminal-dot g"></div>
+          <span class="terminal-title">Claude Code + alio-mcp</span>
+        </div>
+        <div class="terminal-body" id="termBody"></div>
+      </div>
+      <div class="demo-sub">
+        <strong>alio-investigator</strong> &mdash; 다수 기관&middot;다수 항목 일괄 수집을 자동화하는 서브에이전트.<br>
+        GUI 크롤러는 <em>사람이</em>, MCP는 <em>AI가</em> 알리오를 쓴다.
+      </div>
     </div>
+  </div>
+
+  <!-- ═══ Slide 6: CTA ═══ -->
+  <div class="slide" data-slide="6">
+    <div class="slide-title">GitHub에서 시작하기</div>
+    <div class="cta-repos" id="ctaRepos">
+      <a class="repo-card" href="https://github.com/giovinazo/alio-crawler" target="_blank">
+        <span class="repo-icon">&#128187;</span>
+        <div class="repo-name">alio-crawler</div>
+        <div class="repo-desc">tkinter GUI. 92개 항목 &times; 355개 기관 일괄 다운로드. 사람이 쓰는 도구.</div>
+        <div class="repo-meta"><span>&#9679; Python</span><span>v5.4.1</span><span>~4,900 lines</span></div>
+      </a>
+      <a class="repo-card" href="https://github.com/giovinazo/alio-mcp" target="_blank">
+        <span class="repo-icon">&#129302;</span>
+        <div class="repo-name">alio-mcp</div>
+        <div class="repo-desc">MCP 서버. 11개 도구로 AI가 알리오 데이터를 직접 조회&middot;다운로드.</div>
+        <div class="repo-meta"><span>&#9679; Python</span><span>v0.4.1</span><span>~1,600 lines</span></div>
+      </a>
+    </div>
+    <div class="setup-mini" id="setupCode">
+      <div class="comment"># 3줄이면 끝</div>
+      <div>git clone https://github.com/giovinazo/alio-mcp</div>
+      <div>pip install -r requirements.txt</div>
+      <div class="comment"># Claude 설정에 MCP 서버 등록 후 자연어로 질의</div>
+    </div>
+    <a class="cta-btn" href="https://github.com/giovinazo/alio-mcp" target="_blank">GitHub &rarr;</a>
   </div>
 
 </div>
 
-<div class="slide-counter" id="counter">1 / 5</div>
+<div class="slide-counter" id="counter">1 / 7</div>
 
 <script>
 const slides = document.querySelectorAll('.slide');
@@ -715,7 +1333,8 @@ const totalSlides = slides.length;
 let current = 0;
 let transitioning = false;
 
-// Nav dots
+const slideToPhase = [-1, 0, 1, 2, 3, 4, 4];
+
 const dotsContainer = document.getElementById('navDots');
 for (let i = 0; i < totalSlides; i++) {
   const dot = document.createElement('div');
@@ -725,9 +1344,24 @@ for (let i = 0; i < totalSlides; i++) {
 }
 
 function updateUI() {
-  document.getElementById('progress').style.width = ((current + 1) / totalSlides * 100) + '%';
   document.getElementById('counter').textContent = (current + 1) + ' / ' + totalSlides;
   document.querySelectorAll('.nav-dot').forEach((d, i) => d.classList.toggle('active', i === current));
+  updateEvoBar();
+}
+
+function updateEvoBar() {
+  const activePhase = slideToPhase[current];
+  const phases = document.querySelectorAll('.evo-bar .evo-phase');
+  const evoLines = document.querySelectorAll('.evo-bar .evo-line');
+
+  phases.forEach(p => {
+    const pi = parseInt(p.dataset.phase);
+    p.classList.remove('active', 'done');
+    if (pi === activePhase) p.classList.add('active');
+    else if (pi < activePhase) p.classList.add('done');
+  });
+
+  evoLines.forEach((l, i) => l.classList.toggle('filled', i < activePhase));
 }
 
 function goTo(index) {
@@ -750,52 +1384,86 @@ function goTo(index) {
 function next() { goTo(current + 1); }
 function prev() { goTo(current - 1); }
 
-// Scroll / key / touch
 let lastWheel = 0;
-window.addEventListener('wheel', (e) => {
+window.addEventListener('wheel', e => {
   const now = Date.now();
   if (now - lastWheel < 1200) return;
   lastWheel = now;
   e.deltaY > 0 ? next() : prev();
 }, { passive: true });
 
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === ' ') next();
-  if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') prev();
+window.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
+  if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); prev(); }
 });
 
 let touchY = 0;
-window.addEventListener('touchstart', (e) => { touchY = e.touches[0].clientY; });
-window.addEventListener('touchend', (e) => {
+window.addEventListener('touchstart', e => { touchY = e.touches[0].clientY; });
+window.addEventListener('touchend', e => {
   const diff = touchY - e.changedTouches[0].clientY;
   if (Math.abs(diff) > 50) diff > 0 ? next() : prev();
 });
 
-// Slide-specific animations
 function onSlideEnter(index) {
-  if (index === 2) animateTools();
-  if (index === 3) animateTerminal();
-  if (index === 4) animateSetup();
+  if (index === 1) animateWhy();
+  if (index === 2) animateProblem();
+  if (index === 3) animateCrawler();
+  if (index === 4) animateWorks();
+  if (index === 5) animateTerminal();
+  if (index === 6) animateCTA();
 }
 
-function animateTools() {
-  document.querySelectorAll('.tool-card').forEach((card, i) => {
-    card.style.animation = 'none';
-    card.offsetHeight;
-    card.style.animation = `popIn 0.4s ${i * 0.06}s forwards`;
+function animateWhy() {
+  document.querySelectorAll('.why-card').forEach((c, i) => {
+    c.style.animation = 'none'; c.offsetHeight;
+    c.style.animation = `fadeUp 0.5s ${0.15 + i * 0.12}s forwards`;
+  });
+  const divider = document.querySelector('.insight-divider');
+  divider.style.opacity = '0'; divider.style.animation = 'none'; divider.offsetHeight;
+  divider.style.animation = 'fadeUp 0.4s 0.7s forwards';
+
+  const card = document.getElementById('insightCard');
+  card.style.animation = 'none'; card.offsetHeight;
+  card.style.animation = 'popIn 0.6s 0.9s forwards';
+}
+
+function animateProblem() {
+  document.querySelectorAll('#triggerScene .chat-bubble, #triggerScene .trigger-arrow').forEach((el, i) => {
+    el.style.animation = 'none'; el.offsetHeight;
+    el.style.animation = `fadeUp 0.5s ${0.15 + i * 0.4}s forwards`;
+  });
+  document.querySelectorAll('.problem-card').forEach((c, i) => {
+    c.style.opacity = '0'; c.style.animation = 'none'; c.offsetHeight;
+    c.style.animation = (i === 0 ? 'fadeLeft' : 'fadeRight') + ` 0.6s ${1.2 + i * 0.3}s forwards`;
   });
 }
 
-function animateSetup() {
-  document.querySelectorAll('.setup-card').forEach((card, i) => {
-    card.style.animation = 'none';
-    card.offsetHeight;
-    card.style.animation = `fadeUp 0.5s ${i * 0.2}s forwards`;
+function animateCrawler() {
+  const mockup = document.getElementById('guiMockup');
+  mockup.style.opacity = '0'; mockup.style.animation = 'none'; mockup.offsetHeight;
+  mockup.style.animation = 'fadeLeft 0.7s 0.2s forwards';
+
+  document.querySelectorAll('.feature-list li').forEach((f, i) => {
+    f.style.opacity = '0'; f.style.animation = 'none'; f.offsetHeight;
+    f.style.animation = `fadeRight 0.4s ${0.4 + i * 0.08}s forwards`;
   });
-  const cta = document.querySelector('.cta-row');
-  cta.style.animation = 'none';
-  cta.offsetHeight;
-  cta.style.animation = 'fadeUp 0.5s 0.8s forwards';
+}
+
+function animateWorks() {
+  const steps = document.querySelectorAll('.pipe-step, .pipe-conn');
+  steps.forEach((s, i) => {
+    s.style.opacity = '0'; s.style.animation = 'none'; s.offsetHeight;
+    s.style.animation = `popIn 0.4s ${0.1 + i * 0.1}s forwards`;
+  });
+
+  document.querySelectorAll('.tool-cat').forEach((c, i) => {
+    c.style.opacity = '0'; c.style.animation = 'none'; c.offsetHeight;
+    c.style.animation = `fadeUp 0.5s ${0.9 + i * 0.15}s forwards`;
+  });
+
+  const note = document.querySelector('.works-note');
+  note.style.opacity = '0'; note.style.animation = 'none'; note.offsetHeight;
+  note.style.animation = 'fadeUp 0.4s 1.3s forwards';
 }
 
 function animateTerminal() {
@@ -803,52 +1471,52 @@ function animateTerminal() {
   body.innerHTML = '';
 
   const lines = [
-    { type: 'prompt', text: '산단공 감사원 지적사항 전부 가져와' },
+    { type: 'prompt', text: '산단공이랑 정원 비슷한 기관 5곳 내부규정 수 비교해줘' },
     { type: 'blank' },
-    { type: 'output', text: '<span style="color:var(--accent)">mcp__alio__search_organs</span>("산업단지공단")' },
-    { type: 'output', text: '<span style="color:var(--text-dim)">  > 한국산업단지공단 (C0208) 발견</span>' },
+    { type: 'output', text: '<span style="color:var(--accent)">search_organs</span>("산업단지공단")' },
+    { type: 'output', text: '<span style="color:var(--text-dim)">  &gt; 한국산업단지공단 (C0208, 정원 585명)</span>' },
     { type: 'blank' },
-    { type: 'output', text: '<span style="color:var(--accent)">mcp__alio__list_all_board_items</span>("B1220", "C0208")' },
-    { type: 'output', text: '<span style="color:var(--text-dim)">  > 23건 수집 완료 (2021~2025)</span>' },
+    { type: 'output', text: '<span style="color:var(--accent)">list_organs</span>("10105") &rarr; 정원 유사 기관 필터' },
+    { type: 'output', text: '<span style="color:var(--text-dim)">  &gt; 5곳 선정: 도로공사, 관광공사, 무역보험, 마사회, 환경공단</span>' },
     { type: 'blank' },
-    { type: 'output', text: '<span style="color:var(--accent)">mcp__alio__list_board_attachments</span>(...)' },
-    { type: 'output', text: '<span style="color:var(--text-dim)">  > 첨부 3건 발견 (PDF)</span>' },
+    { type: 'output', text: '<span style="color:var(--accent)">list_rules</span>(count_only=True) &times; 6기관' },
+    { type: 'output', text: '<span style="color:var(--text-dim)">  &gt; 산단공 38건 | 도로공사 52건 | 관광공사 41건 | ...</span>' },
     { type: 'blank' },
-    { type: 'output', text: '<span style="color:var(--accent)">mcp__alio__download_board_attachment</span>(...)  x3' },
-    { type: 'output', text: '<span style="color:var(--green)">  > /tmp/alio/산업통상자원부_종합감사.pdf (74KB)</span>' },
-    { type: 'output', text: '<span style="color:var(--green)">  > /tmp/alio/집행전말서(조치계획).pdf</span>' },
-    { type: 'output', text: '<span style="color:var(--green)">  > /tmp/alio/조치실적(수정공시).pdf</span>' },
-    { type: 'blank' },
-    { type: 'result', text: '<span style="color:var(--green);font-weight:700">DONE</span> <span style="color:var(--text-dim)">23건 조회, 3건 다운로드 완료</span>' },
+    { type: 'result', text: '<span style="color:var(--green);font-weight:700">DONE</span> <span style="color:var(--text-dim)">6기관 내부규정 수 비교표 생성 완료</span>' },
+    { type: 'output', text: '<span style="color:var(--text-dim)">  &gt; 산단공은 유사 기관 대비 내부규정 수가 적은 편입니다.</span>' },
+    { type: 'output', text: '<span style="color:var(--text-dim)">  &gt; 도로공사(52건) 대비 14건 적으며, 인사·윤리 분야 규정 보완을 검토할 수 있습니다.</span>' },
   ];
 
   lines.forEach((line, i) => {
     const div = document.createElement('div');
     div.className = 'term-line';
-
-    if (line.type === 'blank') {
-      div.innerHTML = '&nbsp;';
-    } else if (line.type === 'prompt') {
-      div.innerHTML = '<span class="term-prompt"><span class="term-cmd">' + line.text + '</span></span>';
-    } else {
-      div.innerHTML = line.text;
-    }
-
+    if (line.type === 'blank') div.innerHTML = '&nbsp;';
+    else if (line.type === 'prompt') div.innerHTML = '<span class="term-prompt"><span class="term-cmd">' + line.text + '</span></span>';
+    else div.innerHTML = line.text;
     body.appendChild(div);
 
     setTimeout(() => {
       div.style.transition = 'opacity 0.3s, transform 0.3s';
       div.style.opacity = '1';
       div.style.transform = 'translateX(0)';
-    }, 200 + i * 180);
+    }, 200 + i * 160);
   });
 
-  // Cursor at end
   setTimeout(() => {
-    const cursorSpan = document.createElement('span');
-    cursorSpan.className = 'cursor';
-    body.appendChild(cursorSpan);
-  }, 200 + lines.length * 180);
+    const cur = document.createElement('span');
+    cur.className = 'cursor';
+    body.appendChild(cur);
+  }, 200 + lines.length * 160);
+}
+
+function animateCTA() {
+  document.querySelectorAll('.repo-card').forEach((c, i) => {
+    c.style.opacity = '0'; c.style.animation = 'none'; c.offsetHeight;
+    c.style.animation = `fadeUp 0.5s ${0.2 + i * 0.2}s forwards`;
+  });
+  const setup = document.getElementById('setupCode');
+  setup.style.opacity = '0'; setup.style.animation = 'none'; setup.offsetHeight;
+  setup.style.animation = 'fadeUp 0.5s 0.7s forwards';
 }
 
 updateUI();
