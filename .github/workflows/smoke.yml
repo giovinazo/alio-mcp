@@ -1,0 +1,39 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Import alio_core
+        run: python -c "import alio_core; print('alio_core OK')"
+
+      - name: Import alio_mcp
+        run: python -c "import alio_mcp; print('alio_mcp OK')"
+
+      - name: MCP server starts (2s)
+        run: |
+          timeout 2 python alio_mcp.py || code=$?
+          if [ "${code:-0}" -eq 124 ]; then
+            echo "Server alive for 2s — OK"
+          else
+            echo "Server exited early (code $code)" && exit 1
+          fi
