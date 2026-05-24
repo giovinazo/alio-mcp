@@ -30,10 +30,4 @@ jobs:
         run: python -c "import alio_mcp; print('alio_mcp OK')"
 
       - name: MCP server starts (2s)
-        run: |
-          sleep 3 | timeout 2 python alio_mcp.py; code=$?
-          if [ "$code" -eq 124 ]; then
-            echo "Server alive for 2s — OK"
-          else
-            echo "Server exited early (code $code)" && exit 1
-          fi
+        run: sleep 3 | timeout 2 python alio_mcp.py || [ $? -eq 124 ]
