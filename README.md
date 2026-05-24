@@ -198,12 +198,24 @@ CRAWLER_DIR=/path/to/alio-crawler ./sync_to_crawler.sh
 
 매칭 실패 또는 인자 누락 시 모두 `{"error": "..."}` 시그널 반환 (NOT_FOUND·MISSING·HTTP·API_ERROR·DOWNLOAD_FAILED).
 
-## 시작하기 (초보자 가이드)
+## 시작하기
+
+### 가장 쉬운 방법 (터미널 몰라도 됨)
+
+1. 이 페이지 상단의 **`<> Code`** → **`Download ZIP`** 클릭
+2. [Claude Desktop](https://claude.ai/download) 설치 (이미 있으면 건너뛰기)
+3. Claude Desktop 대화에 다운로드한 **ZIP 파일을 그대로 올리기**
+4. **"이거 설치 도와줘"** 라고 입력
+
+Claude가 ZIP 안의 코드와 문서를 읽고, 사용자 환경(Mac/Windows)에 맞게 설치를 단계별로 안내해 줍니다.
+
+---
+
+### 직접 설치 (개발자용)
 
 MCP 서버는 단독 프로그램이 아니라 Claude에 붙이는 **확장 도구**다.
-아래 순서대로 따라하면 된다.
 
-### 선행 조건
+#### 선행 조건
 
 | 항목 | 설명 |
 |------|------|
@@ -214,7 +226,7 @@ MCP 서버는 단독 프로그램이 아니라 Claude에 붙이는 **확장 도�
 > Claude Desktop은 [claude.ai/download](https://claude.ai/download)에서 받을 수 있다.
 > Claude Code는 Node.js 18+ 필요 → `npm install -g @anthropic-ai/claude-code`로 설치.
 
-### 1단계: 레포 클론 & 패키지 설치
+#### 1단계: 레포 클론 & 패키지 설치
 
 ```bash
 git clone https://github.com/giovinazo/alio-mcp.git
@@ -222,7 +234,7 @@ cd alio-mcp
 pip install -r requirements.txt
 ```
 
-### 2단계: Claude에 MCP 서버 등록
+#### 2단계: Claude에 MCP 서버 등록
 
 사용하는 클라이언트에 따라 **하나만** 선택한다.
 
@@ -270,7 +282,7 @@ claude mcp add alio -- python3 /absolute/path/to/alio-mcp/alio_mcp.py
 }
 ```
 
-### 3단계: 동작 확인
+#### 3단계: 동작 확인
 
 Claude에게 자연어로 물어본다:
 
