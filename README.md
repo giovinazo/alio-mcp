@@ -1,5 +1,7 @@
 # alio-mcp
 
+[![소개 페이지](docs/preview.gif)](https://giovinazo.github.io/alio-mcp)
+
 > **[소개 페이지 보기](https://giovinazo.github.io/alio-mcp)**
 
 한국 공공기관 정보공개시스템 **알리오(ALIO, [www.alio.go.kr](https://www.alio.go.kr))** 의 항목별공시 데이터를 LLM 도구로 노출하는 MCP(Model Context Protocol) 서버.
