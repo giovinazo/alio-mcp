@@ -8,6 +8,15 @@
 
 GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *AI 에이전트가* 알리오를 쓰게 해준다.
 
+### 지금 바로 시작하기
+
+1. **[Download ZIP](https://github.com/giovinazo/alio-mcp/archive/refs/heads/main.zip)** 클릭
+2. **[Claude Desktop](https://claude.ai/download)** 설치
+3. Claude 대화에 **ZIP 파일을 그대로 올리기**
+4. **"이거 설치 도와줘"** 입력하면 끝
+
+> Claude가 코드를 읽고 사용자 환경(Mac/Windows)에 맞게 단계별로 안내해 줍니다.
+
 ## 무엇을 하는가
 
 알리오 항목별공시는 약 355개 공공기관이 의무적으로 공시하는 92개 표준화된 정보 메뉴다(임직원 수·임원연봉·신규채용 현황·이사회·자체 감사부서·임원 모집공고·감사원 지적사항 등). 이 MCP는 그 데이터를 LLM이 자연어로 직접 다룰 수 있게 한다.
