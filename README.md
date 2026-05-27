@@ -36,31 +36,34 @@ CRAWLER_DIR=/path/to/alio-crawler ./sync_to_crawler.sh
 
 본 레포 단독으로 MCP 서버 실행에 알리오-크롤러는 필요 없다.
 
-## 제공 도구 (v0.4.0 — 11개)
+## 제공 도구 (v0.5.0 — 11개)
 
 | # | 도구 | 도입 | 용도 |
 |---|---|---|---|
-| 1 | `list_menus` | v0.1.0 | 메뉴 92개 |
+| 1 | `list_menus` | v0.1.0 | 메뉴 92개 (v0.5.0 `keyword` 항목명 검색 추가) |
 | 2 | `list_organs` | v0.2.0 | 메뉴별 기관 ~355개 |
 | 3 | `list_board_items` | v0.2.0 | 게시판형 자료 1페이지 |
 | 4 | `download_report` | v0.2.0 | 공시 PDF |
 | 5 | `search_organs` | v0.3.0 | 기관명 부분 일치 |
 | 6 | `list_board_attachments` | v0.3.0 | 게시판형 첨부 메타 |
 | 7 | `download_board_attachment` | v0.3.0 | 게시판형 첨부 다운로드 |
-| 8 | `list_all_board_items` | **v0.4.0** | itemReportListSusi 전체 페이지 자동 순회 (audit·mgmt_eval 통합) |
+| 8 | `list_all_board_items` | **v0.4.0** | 전체 페이지 자동 순회 (v0.5.0 apbaId 필수 rootNo 힌트 개선) |
 | 9 | `download_disclosure_attachment` | **v0.4.0** | 보고서 부속 첨부 file·dfile |
 | 10 | `list_rules` | **v0.4.1** | 기관 내부규정 목록 + 최신 파일 메타 (v0.4.1 `count_only`·`include_files` 경량 옵션) |
 | 11 | `download_rule_file` | **v0.4.0** | 내부규정 파일 fileNo 다운로드 |
 
 
-### 1. `list_menus(category="")`
+### 1. `list_menus(category="", keyword="")`
 
 알리오 항목별공시 메뉴 92개 목록 조회 (v5.4.2 기준 — ESG 운영·AI 활용 카테고리 신설 반영).
 
 **인자**
 - `category` *(string, optional)* — 대분류명. 허용값: `"기관운영"` / `"ESG 운영"` / `"경영성과"` / `"대내외 평가 등"` / `"AI 활용"`
   - 공백·대소문자 차이 자동 흡수 (`"esg운영"`도 매칭)
-  - 빈 문자열이면 전체 92개 반환
+  - 빈 문자열이면 대분류 필터 없음
+- `keyword` *(string, optional, v0.5.0)* — 항목명 부분 일치 검색 (예: `"감사"`, `"자체감사"`, `"징계"`)
+  - `category`와 동시 사용 가능 (AND 조건)
+  - 빈 문자열이면 키워드 필터 없음
 
 **반환 예**
 ```json

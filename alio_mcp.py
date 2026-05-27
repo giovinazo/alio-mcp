@@ -1,13 +1,13 @@
-"""알리오 항목별공시 MCP 서버 v0.4.1
+"""알리오 항목별공시 MCP 서버 v0.5.0
 
 한국 공공기관 정보공개시스템 알리오(www.alio.go.kr)의 항목별공시
 92개 메뉴와 약 355개 공시 대상 기관 데이터를 LLM 도구로 노출한다.
 
 도구 11개:
-    list_menus(category)                       — 메뉴 목록 (92개)
+    list_menus(category, keyword)              — 메뉴 목록 (92개, v0.5.0 키워드 검색 추가)
     list_organs(rootNo, page)                  — 항목별 공시 기관 목록
     list_board_items(rootNo, apbaId, page)     — 게시판형 자료 1페이지
-    list_all_board_items(rootNo, apbaId)       — 전체 페이지 자동 순회 (v0.4.0)
+    list_all_board_items(rootNo, apbaId)       — 전체 페이지 자동 순회 (v0.5.0 힌트 개선)
     download_report(disclosureNo, …)           — 공시 보고서 PDF
     download_disclosure_attachment(kind, …)    — 보고서 부속 첨부 file/dfile (v0.4.0)
     search_organs(name)                        — 기관명 부분 일치 검색
@@ -53,17 +53,20 @@ def _normalize(s: str) -> str:
 # Tool 1: 메뉴 조회
 # ─────────────────────────────────────────────────────────────
 @mcp.tool()
-def list_menus(category: str = "") -> list[dict]:
-    """알리오 항목별공시 메뉴 목록을 반환한다 (92개, v5.4.2).
+def list_menus(category: str = "", keyword: str = "") -> list[dict]:
+    """알리오 항목별공시 메뉴 목록을 반환한다 (92개).
 
     Args:
-        category: 대분류명. '기관운영' / 'ESG 운영' / '경영성과' / '대내외 평가 등' / 'AI 활용' 등.
+        category: 대분류명. '기관운영' / 'ESG 운영' / '경영성과' / '대내외 평가 등' 등.
                   공백·대소문자 차이는 자동 흡수.
-                  빈 문자열이면 전체 메뉴 반환.
+                  빈 문자열이면 대분류 필터 없음.
+        keyword: 항목명 부분 일치 검색 (v0.5.0). 예: '감사', '자체감사', '징계'.
+                 빈 문자열이면 키워드 필터 없음.
+                 category와 동시 사용 가능 (AND 조건).
 
     Returns:
         메뉴 리스트. 각 항목 필드: 대분류 / 항목명 / rootNo / 보고서형
-        매칭 없으면 NOT_FOUND 시그널 + 유효한 대분류 목록 반환.
+        매칭 없으면 NOT_FOUND 시그널.
     """
     items = fetch_alio_items()
     if not items:
@@ -78,6 +81,12 @@ def list_menus(category: str = "") -> list[dict]:
                 "유효한_대분류": sorted({m["lcdnm"] for m in items if m.get("lcdnm")}),
             }]
         items = filtered
+
+    if keyword:
+        kw = keyword.strip()
+        items = [m for m in items if kw in (m.get("mcdnm") or "")]
+        if not items:
+            return [{"error": f"NOT_FOUND: 항목명에 '{keyword}' 포함 메뉴 없음"}]
 
     return [
         {
@@ -161,14 +170,19 @@ def list_organs(rootNo: str, page: int = 1) -> dict:
 # ─────────────────────────────────────────────────────────────
 @mcp.tool()
 def list_board_items(rootNo: str, apbaId: str = "", page: int = 1) -> dict:
-    """게시판형(보고서형=False) 항목의 자료 목록.
+    """게시판형·보고서형 항목의 자료 목록 (1페이지 = 최대 10건).
 
     게시판형 12종: B1010 임원 모집공고, B1020 직원 채용정보, B1030 입찰공고,
     B1210 국회 등 외부평가, B1220 감사원 지적사항 등.
+    보고서형(숫자 rootNo): 43006 자체감사결과, 32301 감사보고서 등.
+
+    **중요**: 43006·32301 등 일부 rootNo는 apbaId 없이 전체 조회 불가.
 
     Args:
-        rootNo: 게시판형 항목 rootNo (예: 'B1010').
-        apbaId: 특정 기관 ID로 한정 (예: 'C0208'). 빈 문자열이면 전체 기관 최근순.
+        rootNo: 항목 rootNo (예: 'B1010', '43006').
+        apbaId: 특정 기관 ID로 한정 (예: 'C0208').
+                'B' 시작 게시판형은 빈 문자열로 전체 조회 가능.
+                숫자 rootNo(43006 등)는 apbaId 필수일 수 있음.
         page: 페이지 번호 (1부터).
 
     Returns:
@@ -441,6 +455,8 @@ def download_board_attachment(
 # ─────────────────────────────────────────────────────────────
 # Tool 8: 게시판형 자료 전체 페이지 자동 순회 (신규 v0.4.0)
 # ─────────────────────────────────────────────────────────────
+_APBA_REQUIRED_ROOTS = {"43006", "32301"}
+
 @mcp.tool()
 def list_all_board_items(rootNo: str, apbaId: str = "") -> dict:
     """itemReportListSusi 응답을 모든 페이지에 걸쳐 자동 순회한다.
@@ -449,10 +465,16 @@ def list_all_board_items(rootNo: str, apbaId: str = "") -> dict:
     감사원 지적사항처럼 누적 수십~수백건이 쌓이는 자료군은 한 번에
     전부 조회하는 것이 더 효율적이다.
 
+    **중요**: 43006(자체감사결과), 32301(감사보고서) 등 일부 rootNo는
+    알리오 API 특성상 apbaId(기관ID) 없이 전체 조회가 불가능하다.
+    이 경우 반드시 apbaId를 지정해야 한다.
+    기관ID는 search_organs(name) 또는 list_organs(rootNo)로 확인.
+
     Args:
-        rootNo: 자료 식별자. 예 — '43006'(자체감사), 'B1230'(경영실적
+        rootNo: 자료 식별자. 예 — '43006'(자체감사결과), 'B1230'(경영실적
                 평가결과), 'B1220'(감사원 지적사항), 'B1210'(국회 외부평가).
-        apbaId: 기관 ID. 빈 문자열이면 전체 기관 최근순.
+        apbaId: 기관 ID. 'B'로 시작하는 게시판형은 빈 문자열로 전체 기관
+                조회 가능. 숫자 rootNo(43006 등)는 apbaId 필수.
 
     Returns:
         {"rootNo", "totalCnt", "자료": [{"제목", "등록일", "기관ID",
@@ -463,13 +485,27 @@ def list_all_board_items(rootNo: str, apbaId: str = "") -> dict:
     if not rootNo:
         return {"error": "MISSING: rootNo가 필수입니다"}
 
+    primary = rootNo.split(",")[0].strip()
+    if not apbaId and primary in _APBA_REQUIRED_ROOTS:
+        return {
+            "error": f"APBA_REQUIRED: rootNo='{primary}'는 apbaId(기관ID) 없이 전체 조회 불가",
+            "hint": "search_organs(name)으로 기관ID를 먼저 확인한 뒤 apbaId를 지정하세요.",
+            "totalCnt": 0, "자료": [],
+        }
+
     sess = create_session()
     items = fetch_all_board_items(sess, rootNo, apba_id=apbaId)
     if not items:
-        return {
+        hint = ""
+        if not apbaId and not primary.startswith("B"):
+            hint = "이 rootNo는 apbaId 필수일 수 있음. search_organs로 기관ID 확인 후 재시도."
+        result = {
             "error": f"NOT_FOUND: rootNo='{rootNo}' apbaId='{apbaId}' 자료 없음",
             "totalCnt": 0, "자료": [],
         }
+        if hint:
+            result["hint"] = hint
+        return result
     return {
         "rootNo": rootNo,
         "totalCnt": len(items),
