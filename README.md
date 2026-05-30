@@ -31,7 +31,9 @@ GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *A
 
 > *예* — "산단공이랑 정원 비슷한 기관 5곳 임직원수 비교해줘", "최근 30일 임원 모집공고를 부처별로 정리해줘", "산단공 감사원 지적사항 첨부 PDF 다 받아줘"
 
-## 아키텍처 (v0.4.0)
+## 아키텍처
+
+**Python·Node 두 런타임으로 동일한 11개 도구를 제공한다.** Node판(`node/`)은 Python을 1:1 포팅(도구별 동등성 적대 검증 완료)해 **MCPB 번들(`.mcpb`)** 로 패키징 — Claude Desktop 더블클릭 설치용이며, esbuild 단일 번들이라 Node 외 의존성이 없다.
 
 이 패키지의 `alio_core.py`는 알리오 API 호출·HTML 파싱·파일 다운로드를 담당하는 **공유 라이브러리(정본)**다. GUI 크롤러([alio-crawler](https://github.com/giovinazo/alio-crawler))는 자기 레포에 이 파일의 **sync된 사본**을 보유하며, 두 프로젝트가 동일 코어로 동작한다.
 
@@ -386,6 +388,7 @@ Claude에서 자연어 한 줄로:
 
 ## 변경 이력
 
+- **v1.0.0** (2026-05-30) — **Node/TypeScript 포팅(`node/`) + MCPB(`.mcpb`) 배포.** Claude Desktop 더블클릭 한 번으로 설치(Python·터미널·설정 파일 편집 불필요). 도구 11개 Python↔TS 동등성 적대 검증 통과(critical 0). 번들 엔트리는 `.mjs`로 두어 Node 18+ 모든 환경에서 ESM 실행 보장. 기존 Python 코어(`alio_core.py`)·alio-crawler 공유 구조는 그대로 유지.
 - **v0.4.1** (2026-05-21) — `list_rules` 경량 옵션 2종 추가. `count_only=True`는 findRuleList 1페이지만 호출해 `totalCnt`만 반환(다수 기관 카운트 집계용, HTTP 1회). `include_files=False`는 findRuleDtl 호출을 생략(파일 메타 없이 제목·seq만, HTTP 호출은 페이지 수만큼). 기존 풀스펙 동작은 기본값 유지(하위호환). 한국국토정보공사 158건 기준 174회 → 1회(`count_only`) / 16회(`include_files=False`).
 - **v0.4.0** (2026-05-19) — 도구 4종 추가: `list_all_board_items` (페이지 자동 순회로 audit·mgmt_eval·감사원 등 통합 처리), `download_disclosure_attachment` (보고서 부속 file·dfile), `list_rules` + `download_rule_file` (내부규정 체인 — findRuleList → findRuleDtl → rulefiledown). `self_check.py` 신설 (11개 도구 라이브 점검, PASS=12/13).
 - **v0.3.0** (2026-05-19) — `alio_core.py` 도입(alio-crawler v5.4 다운로드 코어 공유). 도구 3종 추가 (`search_organs`, `list_board_attachments`, `download_board_attachment`). 메뉴 수 83→92개 (ESG 운영·AI 활용 카테고리 신설). 기관 수 344→355개.
@@ -402,4 +405,4 @@ Claude에서 자연어 한 줄로:
 
 ---
 
-**English summary**: MCP server exposing the disclosure data of ~355 Korean public institutions via ALIO (alio.go.kr). 11 tools covering menu/institution lookup, board-type items, report PDF download, internal regulations, and file attachments. Includes a Claude Code sub-agent definition (`agents/alio-investigator.md`) for autonomous bulk data collection. v0.4.1.
+**English summary**: MCP server exposing the disclosure data of ~355 Korean public institutions via ALIO (alio.go.kr). 11 tools covering menu/institution lookup, board-type items, report PDF download, internal regulations, and file attachments. Includes a Claude Code sub-agent definition (`agents/alio-investigator.md`) for autonomous bulk data collection. v1.0.0 — also distributed as a one-click `.mcpb` bundle (Node/TypeScript port, esbuild single-file) installable in Claude Desktop by double-click.
