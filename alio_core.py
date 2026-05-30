@@ -448,31 +448,61 @@ def _resolve_collision_path(target_path):
     return f"{base}({n}){ext}"
 
 
-def download_file_to_path(session, url, save_path, params=None, timeout=60):
+def download_file_to_path(session, url, save_path, params=None, timeout=60,
+                          max_retries=3, backoff=1.0):
     """파일 단일 다운로드. JSON 응답이면 API 에러로 간주.
+
+    스트리밍(iter_content) 도중 연결이 끊기는 경우(ConnectionResetError·ReadTimeout
+    등)는 retry_request로 잡히지 않는다 — 응답 헤더(200) 수신 후 본문 전송 중
+    발생하기 때문이다. 따라서 요청+스트리밍 전체를 max_retries만큼 재시도하고,
+    부분 파일이 남지 않도록 .part 임시파일에 받은 뒤 성공 시 원자적으로 교체한다.
+
     반환: (success, saved_path, message)
     """
-    try:
-        resp = retry_request(session, "GET", url, params=params, timeout=timeout, stream=True)
-        if resp.status_code != 200:
-            return False, "", f"HTTP {resp.status_code}"
+    target = _resolve_collision_path(save_path)
+    tmp = target + ".part"
+    last_err = ""
+    for attempt in range(max_retries + 1):
+        try:
+            # 재시도 책임을 이 외부 루프로 일원화한다(max_retries=0). 그러지 않으면
+            # retry_request 내부 재시도(기본 3회)와 외부 루프(max_retries회)가 곱해져
+            # 헤더 단계 오류 시 최대 (n+1)^2회·backoff 누적으로 장시간 블로킹된다.
+            # 본문 스트리밍 끊김은 어차피 retry_request가 못 잡으므로 외부 루프가 필요.
+            resp = retry_request(session, "GET", url, params=params, timeout=timeout,
+                                 stream=True, max_retries=0)
+            if resp.status_code != 200:
+                last_err = f"HTTP {resp.status_code}"
+                if resp.status_code in _RETRIABLE_STATUS_CODES and attempt < max_retries:
+                    time.sleep(backoff * (2 ** attempt) + random.uniform(0, 0.5))
+                    continue
+                return False, "", last_err
 
-        ct = (resp.headers.get("Content-Type") or "").lower()
-        if "json" in ct:
+            ct = (resp.headers.get("Content-Type") or "").lower()
+            if "json" in ct:
+                try:
+                    err = resp.json()
+                    return False, "", f"API error: {err.get('message') or 'unknown'}"
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+            with open(tmp, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            os.replace(tmp, target)
+            return True, target, "OK"
+        except (requests.RequestException, OSError) as e:
+            last_err = str(e)
             try:
-                err = resp.json()
-                return False, "", f"API error: {err.get('message') or 'unknown'}"
-            except (json.JSONDecodeError, ValueError):
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except OSError:
                 pass
-
-        target = _resolve_collision_path(save_path)
-        with open(target, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-        return True, target, "OK"
-    except (requests.RequestException, OSError) as e:
-        return False, "", str(e)
+            if attempt < max_retries:
+                time.sleep(backoff * (2 ** attempt) + random.uniform(0, 0.5))
+                continue
+            return False, "", last_err
+    return False, "", last_err
 
 
 # ─────────────────────────────────────────────────────────
@@ -736,6 +766,47 @@ def fetch_report_tables(session, disclosure_no: str) -> dict:
         "표": tables,
         "본문텍스트": text[:4000],
     }
+
+
+def fetch_disclosure_attachments(session, disclosure_no: str) -> dict:
+    """보고서형 공시의 부속 첨부 메타를 itemReportFiles.json에서 조회.
+
+    download_disclosure_attachment 호출에 필요한 식별자를 한 번에 제공한다:
+      - fileNo       → kind='file'의 fileId (file.json ?f=fileNo&d=disclosureNo)
+      - fileName     → kind='dfile'의 fileName (dfile.json ?fileName=&submissionNo=)
+      - submissionNo → kind='dfile'에 필요
+
+    itemOrganListJung의 'files'(id@name) 필드와 동일 파일집합을 가리키되, 보고서형
+    전반(손익계산서·복리후생비 부속·안전경영책임보고서 등)에 공통이고 disclosureNo
+    하나로 조회되므로 도구 노출에 적합하다.
+
+    반환: {"disclosureNo", "첨부": [{"fileNo","fileName","submissionNo",
+           "fileType","savePath"}, ...]} | {"error": ...}
+    """
+    if not disclosure_no:
+        return {"error": "MISSING: disclosureNo가 필수입니다"}
+    url = f"{BASE_URL}/item/itemReportFiles.json"
+    try:
+        resp = retry_request(session, "GET", url,
+                             params={"disclosureNo": disclosure_no}, timeout=20)
+        if resp.status_code != 200:
+            return {"error": f"REQUEST_FAILED: HTTP {resp.status_code}"}
+        raw = resp.json().get("data", [])
+        data = raw if isinstance(raw, list) else []  # 스칼라/딕트 응답에도 안전(Node Array.isArray 가드와 동등)
+    except (requests.RequestException, ValueError, OSError) as e:
+        return {"error": f"REQUEST_FAILED: {e}"}
+    files = []
+    for f in data:
+        if not isinstance(f, dict):
+            continue
+        files.append({
+            "fileNo": str(f.get("fileNo", "") or ""),
+            "fileName": f.get("orcpFileNa", "") or f.get("saveFileNa", "") or "",
+            "submissionNo": str(f.get("submissionNo", "") or ""),
+            "fileType": f.get("fileType", "") or "",
+            "savePath": f.get("savePath", "") or "",
+        })
+    return {"disclosureNo": disclosure_no, "첨부": files}
 
 
 def load_public_institutions(progress_callback=None):

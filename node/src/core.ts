@@ -7,7 +7,7 @@
  * 주의: MCP stdio 서버는 stdout이 JSON-RPC 채널이므로,
  *       이 모듈의 모든 로깅은 반드시 console.error(stderr)로만 한다.
  */
-import { mkdir, writeFile, stat } from "node:fs/promises";
+import { mkdir, writeFile, stat, rename, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import * as path from "node:path";
 
@@ -251,38 +251,69 @@ function resolveCollisionPath(target: string): string {
 export async function downloadFileToPath(
   url: string,
   savePath: string,
-  opts: { searchParams?: Record<string, string>; timeoutMs?: number } = {}
+  opts: { searchParams?: Record<string, string>; timeoutMs?: number; maxRetries?: number } = {}
 ): Promise<DownloadResult> {
-  try {
-    const resp = await retryFetch(url, {
-      method: "GET",
-      searchParams: opts.searchParams,
-      // 다운로드 기본 타임아웃 120s — 대용량 PDF/zip 저속 회선 대비
-      // (Python requests의 read-timeout은 청크당 리셋이라 단일 데드라인인 fetch보다 관대)
-      timeoutMs: opts.timeoutMs ?? 120000,
-    });
-    if (resp.status !== 200) return { success: false, savedPath: "", message: `HTTP ${resp.status}` };
-
-    const ct = (resp.headers.get("content-type") ?? "").toLowerCase();
-    if (ct.includes("json")) {
-      let message = "unknown";
-      try {
-        const err: any = JSON.parse(await resp.text());
-        message = err?.message || "unknown";
-      } catch {
-        /* JSON 파싱 실패 — Python은 이 경우 파일로 저장 시도하나,
-           ct=json인데 비-JSON 바디는 실무상 알리오 에러 응답이므로 에러로 통일. */
+  // 본문 수신(arrayBuffer)은 retryFetch(요청 단계) 이후라, 스트리밍 중
+  // 연결이 끊기면(ConnectionReset·타임아웃) retryFetch가 잡지 못한다.
+  // 따라서 요청+본문수신 전체를 maxRetries만큼 재시도하고, 부분 파일이
+  // 남지 않도록 .part에 받은 뒤 성공 시 원자적으로 교체한다.
+  const maxRetries = opts.maxRetries ?? 3;
+  const backoff = 1.0;
+  const target = resolveCollisionPath(savePath);
+  const tmp = `${target}.part`;
+  let lastErr = "";
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const resp = await retryFetch(url, {
+        method: "GET",
+        searchParams: opts.searchParams,
+        // 다운로드 기본 타임아웃 120s — 대용량 PDF/zip 저속 회선 대비
+        timeoutMs: opts.timeoutMs ?? 120000,
+        // 재시도 책임을 이 외부 루프로 일원화(maxRetries=0). 그러지 않으면 retryFetch
+        // 내부 재시도(기본 3회)와 외부 루프가 곱해져 헤더 단계 오류 시 과도한 시도·
+        // backoff 누적이 발생한다. 본문(arrayBuffer) 끊김은 외부 루프만 잡을 수 있다.
+        maxRetries: 0,
+      });
+      if (resp.status !== 200) {
+        lastErr = `HTTP ${resp.status}`;
+        if (RETRIABLE_STATUS.has(resp.status) && attempt < maxRetries) {
+          await sleep((backoff * 2 ** attempt + Math.random() * 0.5) * 1000);
+          continue;
+        }
+        return { success: false, savedPath: "", message: lastErr };
       }
-      return { success: false, savedPath: "", message: `API error: ${message}` };
-    }
 
-    const target = resolveCollisionPath(savePath);
-    const buf = Buffer.from(await resp.arrayBuffer());
-    await writeFile(target, buf);
-    return { success: true, savedPath: target, message: "OK" };
-  } catch (err: any) {
-    return { success: false, savedPath: "", message: String(err?.message ?? err) };
+      const ct = (resp.headers.get("content-type") ?? "").toLowerCase();
+      if (ct.includes("json")) {
+        let message = "unknown";
+        try {
+          const err: any = JSON.parse(await resp.text());
+          message = err?.message || "unknown";
+        } catch {
+          /* ct=json인데 비-JSON 바디는 실무상 알리오 에러 응답이므로 에러로 통일. */
+        }
+        return { success: false, savedPath: "", message: `API error: ${message}` };
+      }
+
+      const buf = Buffer.from(await resp.arrayBuffer());
+      await writeFile(tmp, buf);
+      await rename(tmp, target);
+      return { success: true, savedPath: target, message: "OK" };
+    } catch (err: any) {
+      lastErr = String(err?.message ?? err);
+      try {
+        await rm(tmp, { force: true });
+      } catch {
+        /* 부분파일 정리 실패는 무시 */
+      }
+      if (attempt < maxRetries) {
+        await sleep((backoff * 2 ** attempt + Math.random() * 0.5) * 1000);
+        continue;
+      }
+      return { success: false, savedPath: "", message: lastErr };
+    }
   }
+  return { success: false, savedPath: "", message: lastErr };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -636,6 +667,45 @@ export async function fetchReportTables(disclosureNo: string): Promise<any> {
     표: tables,
     본문텍스트: text.slice(0, 4000),
   };
+}
+
+/**
+ * 보고서형 공시의 부속 첨부 메타를 itemReportFiles.json에서 조회.
+ * (fetch_disclosure_attachments 포팅)
+ *
+ * download_disclosure_attachment 호출에 필요한 식별자를 한 번에 제공:
+ *   - fileNo       → kind='file'의 fileId
+ *   - fileName     → kind='dfile'의 fileName (orcpFileNa)
+ *   - submissionNo → kind='dfile'에 필요
+ *
+ * 반환: { disclosureNo, 첨부: [{fileNo, fileName, submissionNo, fileType, savePath}] } | { error }
+ */
+export async function fetchDisclosureAttachments(disclosureNo: string): Promise<any> {
+  if (!disclosureNo) return { error: "MISSING: disclosureNo가 필수입니다" };
+  const url = `${BASE_URL}/item/itemReportFiles.json`;
+  let data: any[];
+  try {
+    const resp = await retryFetch(url, {
+      method: "GET",
+      searchParams: { disclosureNo },
+      timeoutMs: 20000,
+    });
+    if (resp.status !== 200) return { error: `REQUEST_FAILED: HTTP ${resp.status}` };
+    const body: any = await resp.json();
+    data = body?.data ?? [];
+  } catch (err) {
+    return { error: `REQUEST_FAILED: ${err}` };
+  }
+  const 첨부 = (Array.isArray(data) ? data : [])
+    .filter((f) => f && typeof f === "object")
+    .map((f: any) => ({
+      fileNo: String(f.fileNo ?? ""),
+      fileName: f.orcpFileNa ?? f.saveFileNa ?? "",
+      submissionNo: String(f.submissionNo ?? ""),
+      fileType: f.fileType ?? "",
+      savePath: f.savePath ?? "",
+    }));
+  return { disclosureNo, 첨부 };
 }
 
 /**

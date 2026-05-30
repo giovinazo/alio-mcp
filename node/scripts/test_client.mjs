@@ -25,7 +25,7 @@ const check = (cond, label, extra = "") => {
 // ── 0) listTools
 const { tools } = await client.listTools();
 log(`\n[0] listTools → ${tools.length}개`);
-check(tools.length === 16, "도구 16개 노출", `(실제 ${tools.length})`);
+check(tools.length === 17, "도구 17개 노출", `(실제 ${tools.length})`);
 log("    " + tools.map((t) => t.name).join(", "));
 
 // ── 1) search_organs
@@ -160,6 +160,27 @@ log(`\n[16] compare_organs(21201, 2기관)`);
 const cmp = await call("compare_organs", { rootNo: "21201", names: "한국산업단지공단,한국전력공사" });
 check(cmp?.비교기관수 === 2 && (cmp?.결과 ?? []).every((r) => r.표_개수 > 0),
   "다중 비교 병렬", `→ ${(cmp?.결과 ?? []).map((r) => r.기관명).join(",")}`);
+
+// ── 17) list_disclosure_attachments → 부속첨부 file 다운로드 (v1.4.0 갭해소)
+log(`\n[17] list_disclosure_attachments(31301 손익) → download_disclosure_attachment(file)`);
+const opl = await call("list_organs", { rootNo: "31301,31303" });
+const discPl = opl?.기관?.find((o) => o.공시번호)?.공시번호;
+const att = await call("list_disclosure_attachments", { disclosureNo: String(discPl) });
+check(
+  Array.isArray(att?.첨부) && att.첨부.length > 0 && att.첨부.every((a) => a.fileNo),
+  "부속첨부 목록(fileNo 포함)",
+  `→ ${att?.첨부?.length}건, 첫 fileNo=${att?.첨부?.[0]?.fileNo}`
+);
+if (att?.첨부?.length) {
+  const a0 = att.첨부[0];
+  const dl = await call("download_disclosure_attachment", {
+    kind: "file", fileName: a0.fileName, disclosureNo: String(discPl),
+    fileId: a0.fileNo, save_dir: "/tmp/alio_test_dl",
+  });
+  check(dl?.size_bytes > 0, "목록도구 fileNo로 부속첨부 실다운로드", `→ ${dl?.size_bytes} bytes`);
+} else {
+  check(false, "부속첨부 다운로드", `→ ${JSON.stringify(att).slice(0, 80)}`);
+}
 
 await client.close();
 log(`\n━━━ 결과: PASS ${pass} / FAIL ${fail} ━━━`);

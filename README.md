@@ -33,7 +33,7 @@ GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *A
 
 ## 아키텍처
 
-**Python·Node 두 런타임으로 동일한 16개 도구를 제공한다.** Node판(`node/`)은 Python을 1:1 포팅(도구별 동등성 적대 검증 완료)해 **MCPB 번들(`.mcpb`)** 로 패키징 — Claude Desktop 더블클릭 설치용이며, esbuild 단일 번들이라 Node 외 의존성이 없다.
+**Python·Node 두 런타임으로 동일한 17개 도구를 제공한다.** Node판(`node/`)은 Python을 1:1 포팅(도구별 동등성 적대 검증 완료)해 **MCPB 번들(`.mcpb`)** 로 패키징 — Claude Desktop 더블클릭 설치용이며, esbuild 단일 번들이라 Node 외 의존성이 없다.
 
 이 패키지의 `alio_core.py`는 알리오 API 호출·HTML 파싱·파일 다운로드를 담당하는 **공유 라이브러리(정본)**다. GUI 크롤러([alio-crawler](https://github.com/giovinazo/alio-crawler))는 자기 레포에 이 파일의 **sync된 사본**을 보유하며, 두 프로젝트가 동일 코어로 동작한다.
 
@@ -46,9 +46,9 @@ CRAWLER_DIR=/path/to/alio-crawler ./sync_to_crawler.sh
 
 본 레포 단독으로 MCP 서버 실행에 알리오-크롤러는 필요 없다.
 
-## 제공 도구 (v1.3.0 — 16개)
+## 제공 도구 (v1.4.0 — 17개)
 
-> 아래는 대표 도구 상세입니다. **전체 16개 도구의 입력·반환은 `node/manifest.json`과 각 도구 docstring**을 참조하세요.
+> 아래는 대표 도구 상세입니다. **전체 17개 도구의 입력·반환은 `node/manifest.json`과 각 도구 docstring**을 참조하세요.
 > v0.6.0+ 추가분: `get_report_data`(보고서 본문 표·평문), `get_organ_profile`(기관장·홈페이지·예산 등 프로필),
 > `compare_organs`(다중 기관 본문 병렬 비교), `get_structured_summary`(징계종류·청렴도 정형 집계), `list_menus_tree`(메뉴 계층 트리).
 
@@ -62,7 +62,8 @@ CRAWLER_DIR=/path/to/alio-crawler ./sync_to_crawler.sh
 | 6 | `list_board_attachments` | v0.3.0 | 게시판형 첨부 메타 |
 | 7 | `download_board_attachment` | v0.3.0 | 게시판형 첨부 다운로드 |
 | 8 | `list_all_board_items` | **v0.4.0** | 전체 페이지 자동 순회 (v0.5.0 apbaId 필수 rootNo 힌트 개선) |
-| 9 | `download_disclosure_attachment` | **v0.4.0** | 보고서 부속 첨부 file·dfile |
+| 9 | `list_disclosure_attachments` | **v1.4.0** | 보고서형 부속 첨부 목록(fileNo·fileName·submissionNo) — `download_disclosure_attachment` 진입점 |
+| 9b | `download_disclosure_attachment` | **v0.4.0** | 보고서 부속 첨부 file·dfile |
 | 10 | `list_rules` | **v0.4.1** | 기관 내부규정 목록 + 최신 파일 메타 (v0.4.1 `count_only`·`include_files` 경량 옵션) |
 | 11 | `download_rule_file` | **v0.4.0** | 내부규정 파일 fileNo 다운로드 |
 
@@ -392,6 +393,7 @@ Claude에서 자연어 한 줄로:
 
 ## 변경 이력
 
+- **v1.4.0** (2026-05-31) — 위탁집행형 준정부기관 49개 × 전 공시항목(92개) 전수 스트레스 테스트(4,516셀, 첨부 8,139건 6.8GB 수집) 결과 반영. ① 신규 도구 `list_disclosure_attachments`(총 17개) — `itemReportFiles.json`로 보고서형 부속 첨부의 `fileNo`/`fileName`/`submissionNo`를 노출. 종전엔 `list_organs`가 이 메타를 안 줘서 `download_disclosure_attachment`의 부속 첨부(감사보고서·손익계산서·안전경영책임보고서 등)를 **도구만으로는 받을 수 없던 갭**을 해소. ② 다운로드 견고화 — 본문 스트리밍 중 끊김(ConnectionReset·ReadTimeout)을 재시도하지 않아 동시성 부하에서 간헐 실패하던 `download_file_to_path`를 요청+스트리밍 전체 재시도 + `.part` 원자적 교체로 재작성(재실행 시 transient 실패 9→0). 재시도는 외부 루프로 일원화(이중 재시도 곱셈 제거). Py↔Node 동등(self_check 26·test_client 23 FAIL0).
 - **v1.3.0** (2026-05-31) — 도구 4종 추가(총 16개): `list_menus_tree`(메뉴 계층 트리), `get_organ_profile`(기관장·홈페이지·예산 등 프로필), `compare_organs`(다중 기관 본문 병렬 비교), `get_structured_summary`(징계종류별 건수·청렴도 연도별 등급 정형 집계). 크롤러 이용사례 대비 단건 위주 한계 보완.
 - **v1.2.0** (2026-05-31) — 다운로드 저장경로 크로스플랫폼화(`~/Downloads/alio`, 환경변수·manifest `user_config`), UX 개선(인자 출처 안내·`truncated`·에러 `hint`·`list_rules` 경량 기본). 헤드리스 전수검증 `headless_audit.py` 신설(92항목×4엔드포인트 FAILURE 0).
 - **v1.1.0** (2026-05-30) — `search_organs` 지역·유형 AND 필터, `get_report_data`(보고서 본문을 표·평문으로 반환, PDF/HWP 우회) 추가.
@@ -412,4 +414,4 @@ Claude에서 자연어 한 줄로:
 
 ---
 
-**English summary**: MCP server exposing the disclosure data of ~355 Korean public institutions via ALIO (alio.go.kr). 11 tools covering menu/institution lookup, board-type items, report PDF download, internal regulations, and file attachments. Includes a Claude Code sub-agent definition (`agents/alio-investigator.md`) for autonomous bulk data collection. v1.0.0 — also distributed as a one-click `.mcpb` bundle (Node/TypeScript port, esbuild single-file) installable in Claude Desktop by double-click.
+**English summary**: MCP server exposing the disclosure data of ~355 Korean public institutions via ALIO (alio.go.kr). 17 tools covering menu/institution lookup, board-type items, report PDF download, disclosure attachment listing/download, internal regulations, and file attachments. Includes a Claude Code sub-agent definition (`agents/alio-investigator.md`) for autonomous bulk data collection. v1.0.0 — also distributed as a one-click `.mcpb` bundle (Node/TypeScript port, esbuild single-file) installable in Claude Desktop by double-click.

@@ -2,7 +2,7 @@
  * 알리오 항목별공시 MCP 서버 (alio_mcp.py의 TypeScript 포팅)
  *
  * 한국 공공기관 정보공개시스템 알리오(www.alio.go.kr)의 항목별공시
- * 데이터를 LLM 도구 12개로 노출한다. MCPB 번들로 패키징되어 Claude
+ * 데이터를 LLM 도구 17개로 노출한다. MCPB 번들로 패키징되어 Claude
  * Desktop에서 더블클릭 한 번으로 설치된다.
  *
  * 주의: stdout은 JSON-RPC 채널 — 모든 로깅은 console.error(stderr)로만.
@@ -20,6 +20,7 @@ import {
   fetchAlioItems,
   loadPublicInstitutions,
   fetchReportTables,
+  fetchDisclosureAttachments,
   fetchOrganProfile,
   fetchOrganDisclosureMap,
   summarizeDisciplineTable,
@@ -44,7 +45,7 @@ import {
   type Institution,
 } from "./core";
 
-const server = new McpServer({ name: "alio", version: "1.3.0" });
+const server = new McpServer({ name: "alio", version: "1.4.0" });
 // 다운로드 기본 저장 폴더 — ALIO_DOWNLOAD_DIR(manifest user_config로 주입) 우선,
 // 없으면 OS 무관 ~/Downloads/alio. /tmp는 macOS 재부팅 삭제·Windows 경로 무효라 제외.
 const DEFAULT_SAVE_DIR = (() => {
@@ -653,6 +654,39 @@ server.registerTool(
 );
 
 // ─────────────────────────────────────────────────────────────
+// Tool 17: list_disclosure_attachments — 보고서형 부속 첨부 목록 (v1.4.0)
+// ─────────────────────────────────────────────────────────────
+server.registerTool(
+  "list_disclosure_attachments",
+  {
+    title: "보고서형 부속 첨부 목록",
+    description:
+      "보고서형 공시의 부속 첨부파일 목록(itemReportFiles.json). download_report(공시 PDF 본체)와 별개로, " +
+      "공시에 동봉된 감사보고서·손익계산서·복리후생지침·안전경영책임보고서 등을 나열한다. 부속 첨부 수집의 " +
+      "1순위 진입점 — 흐름: list_organs→공시번호→list_disclosure_attachments→download_disclosure_attachment. " +
+      "fileNo는 kind='file'의 fileId, fileName+submissionNo는 kind='dfile'(70401)에 사용. " +
+      "반환: {disclosureNo, 첨부:[{fileNo, fileName, submissionNo, fileType, savePath}]}.",
+    inputSchema: {
+      disclosureNo: z.string().describe("공시번호 (list_organs/list_board_items 응답의 '공시번호')."),
+    },
+  },
+  async ({ disclosureNo }) => {
+    if (!disclosureNo) return jsonResult({ error: "MISSING: disclosureNo가 필수입니다" });
+    const res = await fetchDisclosureAttachments(disclosureNo);
+    if (res && res.error) return jsonResult(res);
+    if (!res.첨부 || res.첨부.length === 0) {
+      return jsonResult({
+        error: `NOT_FOUND: disclosureNo='${disclosureNo}' 부속 첨부 없음`,
+        disclosureNo,
+        첨부: [],
+        hint: "본문 표·평문은 get_report_data, 공시 PDF 본체는 download_report 사용.",
+      });
+    }
+    return jsonResult(res);
+  }
+);
+
+// ─────────────────────────────────────────────────────────────
 // Tool 9: download_disclosure_attachment — 보고서형 부속 첨부 file/dfile
 // ─────────────────────────────────────────────────────────────
 server.registerTool(
@@ -660,8 +694,10 @@ server.registerTool(
   {
     title: "보고서형 부속 첨부 다운로드",
     description:
-      "보고서형 공시의 부속 첨부파일(엑셀·한글 등)을 다운로드한다. kind='file'(fileId+disclosureNo) 또는 " +
-      "kind='dfile'(fileName+submissionNo, 사망자수 70401). 반환: {saved_path, size_bytes}.",
+      "보고서형 공시의 부속 첨부파일(엑셀·한글 등)을 다운로드한다. fileId·fileName·submissionNo는 먼저 " +
+      "list_disclosure_attachments(disclosureNo)로 얻는다(fileNo·fileName·submissionNo 필드). " +
+      "kind='file'(fileId+disclosureNo) 또는 kind='dfile'(fileName+submissionNo, 사망자수 70401). " +
+      "반환: {saved_path, size_bytes}.",
     inputSchema: {
       kind: z.enum(["file", "dfile"]).describe("'file'(fileId+disclosureNo) 또는 'dfile'(fileName+submissionNo)."),
       fileName: z.string().describe("저장 파일명 + 'dfile' 식별자. 알리오 응답 원본명."),

@@ -47,7 +47,7 @@ def skip(label, reason):
 
 def main():
     print("=" * 70)
-    print(f"alio-mcp v0.8.0 자체점검 ({datetime.now():%Y-%m-%d %H:%M:%S})")
+    print(f"alio-mcp v0.9.0 자체점검 ({datetime.now():%Y-%m-%d %H:%M:%S})")
     print("테스트 기관: 한국산업단지공단 (apbaId=C0208)")
     print("=" * 70)
 
@@ -188,27 +188,49 @@ def main():
     else:
         skip("download_rule_file", "정관 최신 파일 메타 없음")
 
-    # ───── [5] 보고서 부속 첨부 (dfile) ─────
-    print("\n[5] 보고서 부속 첨부 (kind=dfile, 사망자수)")
+    # ───── [5] 보고서 부속 첨부 (list_disclosure_attachments → file/dfile) ─────
+    print("\n[5] 보고서 부속 첨부 (v0.9.0 목록 도구 → file/dfile 실다운로드)")
 
-    # 사망자수(70401)에 산단공 공시 있는지
-    organs_safety = m.list_organs("70401", page=1)
-    target_s = next((o for o in organs_safety.get("기관", []) if o["기관ID"] == apba_id), None)
-    if target_s and target_s.get("제출번호"):
-        # dfile은 실제 fileName이 알리오 응답에 들어가 있어야 정확. 단순 호출 검증.
-        r = m.download_disclosure_attachment(
-            kind="dfile",
-            fileName="안전경영책임보고서_test.pdf",
-            submissionNo=target_s["제출번호"],
-            save_dir=tmpdir,
-        )
-        # 실제 fileName 매칭 안 되면 API_ERROR 반환 — 통신·인자 검증 통과만 확인
-        passed = "saved_path" in r or "DOWNLOAD_FAILED" in str(r.get("error", ""))
-        check("download_disclosure_attachment(dfile) — 인자 검증 통과",
-              passed,
-              f"{r}")
+    # 5-1) 손익계산서(31301) 등 부속 file: 목록 도구로 fileNo 확보 → kind='file'
+    organs_pl = m.list_organs("31301,31303", page=1)
+    target_pl = next((o for o in organs_pl.get("기관", []) if o.get("공시번호")), None)
+    if target_pl:
+        dno_pl = target_pl["공시번호"]
+        att = m.list_disclosure_attachments(dno_pl)
+        check("list_disclosure_attachments(31301 손익) — 신규 도구",
+              isinstance(att, dict) and len(att.get("첨부", [])) > 0
+              and all(a.get("fileNo") for a in att.get("첨부", [])),
+              f"→ {len(att.get('첨부', []))}건, 첫 fileNo={att.get('첨부', [{}])[0].get('fileNo')}")
+        if att.get("첨부"):
+            a0 = att["첨부"][0]
+            r = m.download_disclosure_attachment(
+                kind="file", fileName=a0["fileName"], disclosureNo=dno_pl,
+                fileId=a0["fileNo"], save_dir=tmpdir)
+            ok = r.get("size_bytes", 0) > 1024 and os.path.exists(r.get("saved_path", ""))
+            check("download_disclosure_attachment(file) — 목록도구 fileNo로 실다운로드",
+                  ok, f"{r.get('size_bytes')} bytes, name={a0['fileName'][:30]}")
+        else:
+            skip("download_disclosure_attachment(file)", "부속 첨부 없음")
     else:
-        skip("download_disclosure_attachment(dfile)", "사망자수 산단공 제출번호 없음")
+        skip("list_disclosure_attachments(31301)", "손익계산서 공시 기관 없음")
+
+    # 5-2) 안전경영책임보고서(70401) dfile: 목록 도구의 fileName+submissionNo로 다운로드
+    organs_safety = m.list_organs("70401", page=1)
+    target_s = next((o for o in organs_safety.get("기관", []) if o.get("공시번호")), None)
+    if target_s:
+        att_s = m.list_disclosure_attachments(target_s["공시번호"])
+        if att_s.get("첨부") and att_s["첨부"][0].get("submissionNo"):
+            g = att_s["첨부"][0]
+            r = m.download_disclosure_attachment(
+                kind="dfile", fileName=g["fileName"],
+                submissionNo=g["submissionNo"], save_dir=tmpdir)
+            ok = r.get("size_bytes", 0) > 1024 and os.path.exists(r.get("saved_path", ""))
+            check("download_disclosure_attachment(dfile) — 안전경영책임보고서 실다운로드",
+                  ok, f"{r.get('size_bytes')} bytes, name={g['fileName'][:30]}")
+        else:
+            skip("download_disclosure_attachment(dfile)", "70401 부속 첨부 메타 없음")
+    else:
+        skip("download_disclosure_attachment(dfile)", "사망자수 공시 기관 없음")
 
     # ───── [6] v0.7.0 신규 (저장경로·include_files 기본·truncated) ─────
     print("\n[6] v0.7.0 신규 동작")

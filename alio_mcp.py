@@ -1,15 +1,16 @@
-"""알리오 항목별공시 MCP 서버 v0.8.0
+"""알리오 항목별공시 MCP 서버 v0.9.0
 
 한국 공공기관 정보공개시스템 알리오(www.alio.go.kr)의 항목별공시
 92개 메뉴와 약 355개 공시 대상 기관 데이터를 LLM 도구로 노출한다.
 
-도구 16개:
+도구 17개:
     list_menus(category, keyword)              — 메뉴 목록 (92개, v0.5.0 키워드 검색 추가)
     list_organs(rootNo, page)                  — 항목별 공시 기관 목록
     list_board_items(rootNo, apbaId, page)     — 게시판형 자료 1페이지
     list_all_board_items(rootNo, apbaId)       — 전체 페이지 자동 순회 (v0.5.0 힌트 개선)
     download_report(disclosureNo, …)           — 공시 보고서 PDF
     get_report_data(disclosureNo)              — 보고서 본문을 표·평문으로 반환 (v0.6.0)
+    list_disclosure_attachments(disclosureNo)  — 보고서 부속 첨부 목록 (v0.9.0)
     download_disclosure_attachment(kind, …)    — 보고서 부속 첨부 file/dfile (v0.4.0)
     search_organs(name, region, org_type)      — 기관명·지역·유형 검색 (v0.6.0 필터 추가)
     list_board_attachments(...)                — 게시판형 자료 첨부 메타
@@ -36,6 +37,7 @@ from alio_core import (
     create_session, retry_request,
     fetch_alio_items,
     fetch_report_tables,
+    fetch_disclosure_attachments,
     fetch_organ_profile, fetch_organ_disclosure_map,
     summarize_discipline_table, summarize_integrity_table,
     detect_endpoint_kind, build_item_root_no, build_item_display_name,
@@ -774,6 +776,49 @@ def list_all_board_items(rootNo: str, apbaId: str = "") -> dict:
 
 
 # ─────────────────────────────────────────────────────────────
+# Tool 17: 보고서형 부속 첨부 목록 (신규 v0.9.0)
+# ─────────────────────────────────────────────────────────────
+@mcp.tool()
+def list_disclosure_attachments(disclosureNo: str) -> dict:
+    """보고서형 공시의 부속 첨부파일 목록 (itemReportFiles.json).
+
+    download_report(공시 PDF 본체)와 별개로, 공시에 동봉된 부속 파일
+    (감사보고서·손익계산서·복리후생지침·안전경영책임보고서 등)의 목록을 준다.
+    이 도구가 주는 fileNo/fileName/submissionNo를 download_disclosure_attachment에
+    그대로 넘겨 실제 파일을 받는다 — 부속 첨부 수집의 1순위 진입점.
+
+    표준 흐름:
+        list_organs(rootNo) → 공시번호(disclosureNo)
+        → list_disclosure_attachments(disclosureNo) → [{fileNo, fileName, ...}]
+        → download_disclosure_attachment(kind='file', fileId=fileNo,
+                                         disclosureNo=…, fileName=fileName)
+
+    Args:
+        disclosureNo: 공시번호 (list_organs/list_board_items 응답의 '공시번호').
+
+    Returns:
+        {"disclosureNo", "첨부": [{"fileNo", "fileName", "submissionNo",
+         "fileType", "savePath"}, ...]}
+        fileNo는 download_disclosure_attachment(kind='file')의 fileId,
+        fileName+submissionNo는 kind='dfile'(안전경영책임보고서 70401)에 사용.
+        부속 첨부가 없으면 NOT_FOUND (본문은 get_report_data로 확인).
+    """
+    if not disclosureNo:
+        return {"error": "MISSING: disclosureNo가 필수입니다"}
+    sess = create_session()
+    res = fetch_disclosure_attachments(sess, disclosureNo)
+    if isinstance(res, dict) and "error" in res:
+        return res
+    if not res.get("첨부"):
+        return {
+            "error": f"NOT_FOUND: disclosureNo='{disclosureNo}' 부속 첨부 없음",
+            "disclosureNo": disclosureNo, "첨부": [],
+            "hint": "본문 표·평문은 get_report_data, 공시 PDF 본체는 download_report 사용.",
+        }
+    return res
+
+
+# ─────────────────────────────────────────────────────────────
 # Tool 9: 보고서형 부속 첨부 다운로드 file·dfile (신규 v0.4.0)
 # ─────────────────────────────────────────────────────────────
 @mcp.tool()
@@ -788,15 +833,19 @@ def download_disclosure_attachment(
     """보고서형 공시의 부속 첨부파일 다운로드.
 
     download_report(공시 PDF)와 달리 보고서에 동봉된 엑셀·한글 등 부속 첨부.
+    **fileId·fileName·submissionNo는 먼저 list_disclosure_attachments(disclosureNo)로
+    얻는다** (각각 fileNo·fileName·submissionNo 필드).
 
     Args:
         kind: 'file'(일반 첨부 — fileId + disclosureNo 필요) 또는
               'dfile'(안전경영책임보고서 — fileName + submissionNo 필요,
               사망자수 공시 70401에 해당).
-        fileName: 저장 파일명 + 'dfile' 식별자. 알리오 응답에서 받은 원본명.
+        fileName: 저장 파일명 + 'dfile' 식별자. list_disclosure_attachments의
+                  'fileName'(orcpFileNa)을 그대로 사용.
         disclosureNo: 공시번호 (kind='file'일 때 필수).
-        submissionNo: 제출번호 (kind='dfile'일 때 필수).
-        fileId: 파일 ID (kind='file'일 때 필수, parse_files_field 결과의 'id').
+        submissionNo: 제출번호 (kind='dfile'일 때 필수, list_disclosure_attachments의
+                      'submissionNo').
+        fileId: 파일 ID (kind='file'일 때 필수, list_disclosure_attachments의 'fileNo').
         save_dir: 저장 디렉토리. 빈 값이면 ALIO_DOWNLOAD_DIR 또는 ~/Downloads/alio.
 
     Returns:

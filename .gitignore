@@ -25,6 +25,10 @@ build/
 *.pdf
 /tmp_*
 
+# 스트레스 테스트 실행 결과(대량 런타임 산출물 — 하네스 stress_test.py만 커밋)
+stress_results_*.jsonl
+stress_failures_*.json
+
 # 백업 파일 (NAS 로컬에만)
 *.bak
 *.bak.*
