@@ -8,14 +8,22 @@
 
 GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *AI 에이전트가* 알리오를 쓰게 해준다.
 
-### 지금 바로 시작하기
+### 지금 바로 시작하기 — `.mcpb` 더블클릭 (권장)
 
-1. **[Download ZIP](https://github.com/giovinazo/alio-mcp/archive/refs/heads/main.zip)** 클릭
-2. **[Claude Desktop](https://claude.ai/download)** 설치
-3. Claude 대화에 **ZIP 파일을 그대로 올리기**
-4. **"이거 설치 도와줘"** 입력하면 끝
+1. **[Claude Desktop](https://claude.ai/download)** 설치 (이미 있으면 건너뛰기)
+2. **[최신 릴리스](https://github.com/giovinazo/alio-mcp/releases/latest)** 에서 **`alio-mcp.mcpb`** 다운로드
+3. 받은 `.mcpb` 파일을 **더블클릭** → Claude Desktop 확장(Extensions) 설치 창에서 **설치** 클릭
+4. 끝. 대화창에서 *"산단공 내부규정 찾아줘"* 처럼 물어보세요.
 
-> Claude가 코드를 읽고 사용자 환경(Mac/Windows)에 맞게 단계별로 안내해 줍니다.
+> **Python·터미널·설정 파일 편집이 전혀 필요 없습니다.** `.mcpb`(MCP Bundle, 구 DXT)에 Node 서버가 단일 파일로 번들되어 더블클릭만으로 설치·삭제됩니다. — *Node/TypeScript 포팅 `node/`, v1.0.0*
+
+<details>
+<summary><b>개발자·다른 방식 설치</b> (Python 소스 / ZIP / 수동 등록)</summary>
+
+- **ZIP + Claude 안내**: [Download ZIP](https://github.com/giovinazo/alio-mcp/archive/refs/heads/main.zip) → Claude Desktop 대화에 ZIP을 올리고 *"이거 설치 도와줘"* → Claude가 환경(Mac/Windows)에 맞게 단계별 안내.
+- **Python 직접 등록 / Claude Code(CLI)**: 아래 [직접 설치 (개발자용)](#직접-설치-개발자용) 참고.
+- **`.mcpb` 직접 빌드**: `cd node && npm install && npm run build && npx @anthropic-ai/mcpb pack . alio-mcp.mcpb`
+</details>
 
 ## 무엇을 하는가
 

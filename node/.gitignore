@@ -1,0 +1,6 @@
+node_modules/
+dist/
+server/index.js
+*.mcpb
+*.log
+.DS_Store

@@ -1,0 +1,11 @@
+node_modules/
+src/
+scripts/
+dist/
+*.ts
+tsconfig.json
+package.json
+package-lock.json
+.gitignore
+*.log
+.DS_Store

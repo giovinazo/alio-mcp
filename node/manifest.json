@@ -1,0 +1,46 @@
+{
+  "manifest_version": "0.3",
+  "name": "alio-mcp",
+  "display_name": "알리오 항목별공시 (ALIO)",
+  "version": "1.0.0",
+  "description": "한국 공공기관 정보공개시스템 알리오(www.alio.go.kr)의 항목별공시 데이터를 LLM 도구로 노출합니다. 기관 검색·메뉴·기관목록·게시판/보고서 자료·내부규정 조회 및 PDF·첨부파일 다운로드 11종.",
+  "long_description": "알리오(ALIO)는 한국 약 355개 공공기관의 경영정보 공개시스템입니다. 이 확장은 자연어로 '○○공단 내부규정 찾아줘', '한국전력 자체감사결과 받아줘' 같은 요청을 처리할 수 있도록, 알리오 항목별공시 API를 11개 도구로 제공합니다. 별도 API 키 없이 공개 데이터만 사용합니다.",
+  "author": {
+    "name": "giovinazo"
+  },
+  "homepage": "https://github.com/giovinazo/alio-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/giovinazo/alio-mcp"
+  },
+  "license": "MIT",
+  "keywords": ["alio", "korea", "public-institution", "disclosure", "audit", "공공기관", "정보공개"],
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"]
+    }
+  },
+  "tools": [
+    { "name": "list_menus", "description": "항목별공시 메뉴 목록(92개) 조회" },
+    { "name": "list_organs", "description": "특정 메뉴(rootNo)에 공시하는 기관 목록(약 355개)" },
+    { "name": "list_board_items", "description": "게시판형·보고서형 자료 목록(1페이지)" },
+    { "name": "download_report", "description": "공시번호로 보고서 PDF 다운로드" },
+    { "name": "search_organs", "description": "기관명 부분 일치 검색" },
+    { "name": "list_board_attachments", "description": "게시판형 자료의 첨부파일·외부링크 메타 추출" },
+    { "name": "download_board_attachment", "description": "게시판형 첨부파일 다운로드" },
+    { "name": "list_all_board_items", "description": "게시판형 자료 전체 페이지 자동 순회" },
+    { "name": "download_disclosure_attachment", "description": "보고서형 부속 첨부(엑셀·한글 등) 다운로드" },
+    { "name": "list_rules", "description": "기관 내부규정 목록 + 최신 파일 메타 조회" },
+    { "name": "download_rule_file", "description": "내부규정 파일을 fileNo로 다운로드" }
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}
