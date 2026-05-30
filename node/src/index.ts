@@ -2,7 +2,7 @@
  * 알리오 항목별공시 MCP 서버 (alio_mcp.py의 TypeScript 포팅)
  *
  * 한국 공공기관 정보공개시스템 알리오(www.alio.go.kr)의 항목별공시
- * 데이터를 LLM 도구 11개로 노출한다. MCPB 번들로 패키징되어 Claude
+ * 데이터를 LLM 도구 12개로 노출한다. MCPB 번들로 패키징되어 Claude
  * Desktop에서 더블클릭 한 번으로 설치된다.
  *
  * 주의: stdout은 JSON-RPC 채널 — 모든 로깅은 console.error(stderr)로만.
@@ -18,6 +18,7 @@ import {
   retryFetch,
   fetchAlioItems,
   loadPublicInstitutions,
+  fetchReportTables,
   fetchBoardAttachmentList,
   fetchBoardExternalLinks,
   downloadBoardAttachment,
@@ -34,7 +35,7 @@ import {
   type Institution,
 } from "./core";
 
-const server = new McpServer({ name: "alio", version: "1.0.0" });
+const server = new McpServer({ name: "alio", version: "1.1.0" });
 const DEFAULT_SAVE_DIR = "/tmp/alio_downloads";
 
 /** dict/list 결과를 MCP text content로 직렬화 (한글 유니코드 보존). */
@@ -251,23 +252,58 @@ server.registerTool(
 );
 
 // ─────────────────────────────────────────────────────────────
-// Tool 5: search_organs — 기관명 부분 일치 검색
+// Tool 12: get_report_data — 보고서 본문(표·평문) 조회
+// ─────────────────────────────────────────────────────────────
+server.registerTool(
+  "get_report_data",
+  {
+    title: "보고서 본문(표·평문) 조회",
+    description:
+      "보고서형 공시의 본문을 표·평문으로 반환(PDF/HWP 우회). download_report는 PDF를 저장만 하고 " +
+      "본문을 돌려주지 않지만, 이 도구는 itemReportRight.do의 HTML 표를 파싱해 LLM이 바로 읽을 수 있는 " +
+      "행렬·평문으로 반환한다. 징계현황·임직원수·복리후생비 등 보고서형 항목 내용을 파일 없이 확인. " +
+      "공시번호는 list_organs/list_board_items 응답의 '공시번호'. 반환: {disclosureNo, 제목, 표_개수, 표, 본문텍스트}.",
+    inputSchema: {
+      disclosureNo: z
+        .string()
+        .describe("공시번호 (list_organs/list_board_items 응답의 '공시번호')."),
+    },
+  },
+  async ({ disclosureNo }) => {
+    if (!disclosureNo) return jsonResult({ error: "MISSING: disclosureNo가 필수입니다" });
+    return jsonResult(await fetchReportTables(disclosureNo));
+  }
+);
+
+// ─────────────────────────────────────────────────────────────
+// Tool 5: search_organs — 기관 검색 (이름·지역·유형)
 // ─────────────────────────────────────────────────────────────
 let instCache: Map<string, Institution> | null = null;
 
 server.registerTool(
   "search_organs",
   {
-    title: "기관명 검색",
+    title: "기관 검색 (이름·지역·유형)",
     description:
-      "공공기관 약 355개 중 기관명 부분 일치 검색. 첫 호출 시 기관목록 API 1회 호출 후 캐시. " +
-      "반환: {총_검색결과, 기관:[{기관ID, 기관명, 기관유형, 주무부처, 지역}]} (상위 50건).",
+      "공공기관 약 355개를 기관명·지역·기관유형으로 검색(부분 일치, AND). 첫 호출 시 기관목록 " +
+      "API 1회 호출 후 캐시. 세 인자는 모두 부분 문자열이며 함께 주면 AND로 좁혀진다. 셋 다 비우면 " +
+      "에러. 예: {region:'대구', org_type:'위탁집행'} → 대구 소재 위탁집행형 준정부기관 일괄. " +
+      "반환: {총_검색결과, 조건, 기관:[{기관ID, 기관명, 기관유형, 주무부처, 지역}]} (상위 50건).",
     inputSchema: {
-      name: z.string().describe("검색 키워드 (부분 문자열). 예: '산업단지', '한국전력'."),
+      name: z.string().default("").describe("기관명 부분 문자열. 예: '산업단지', '한국전력'."),
+      region: z.string().default("").describe("소재지(본사) 부분 문자열. 예: '대구', '대구광역시', '세종'."),
+      org_type: z
+        .string()
+        .default("")
+        .describe("기관유형 부분 문자열. 예: '위탁집행', '준정부기관(위탁집행형)', '공기업', '기금관리', '기타공공기관'."),
     },
   },
-  async ({ name }) => {
-    if (!name) return jsonResult({ error: "MISSING: name이 필수입니다" });
+  async ({ name, region, org_type }) => {
+    const nm = (name ?? "").trim();
+    const rg = (region ?? "").trim();
+    const tp = (org_type ?? "").trim();
+    if (!nm && !rg && !tp)
+      return jsonResult({ error: "MISSING: name·region·org_type 중 최소 하나가 필요합니다" });
     if (!instCache) {
       instCache = await loadPublicInstitutions();
       if (instCache.size === 0) {
@@ -275,10 +311,13 @@ server.registerTool(
         return jsonResult({ error: "기관 목록 로드 실패" });
       }
     }
-    const kw = name.trim();
     const matches: Array<Record<string, string>> = [];
     for (const [instName, v] of instCache) {
-      if (instName.includes(kw)) {
+      if (
+        (!nm || instName.includes(nm)) &&
+        (!rg || (v.region ?? "").includes(rg)) &&
+        (!tp || (v.inst_type ?? "").includes(tp))
+      ) {
         matches.push({
           기관ID: v.apba_id,
           기관명: instName,
@@ -288,9 +327,10 @@ server.registerTool(
         });
       }
     }
+    const 조건 = { name: nm, region: rg, org_type: tp };
     if (matches.length === 0)
-      return jsonResult({ error: `NOT_FOUND: '${name}' 포함 기관 없음`, 총_검색결과: 0 });
-    return jsonResult({ 총_검색결과: matches.length, 기관: matches.slice(0, 50) });
+      return jsonResult({ error: "NOT_FOUND: 조건에 맞는 기관 없음", 총_검색결과: 0, 조건 });
+    return jsonResult({ 총_검색결과: matches.length, 조건, 기관: matches.slice(0, 50) });
   }
 );
 

@@ -1,6 +1,6 @@
 """alio-mcp v0.4.1 자체점검 스크립트.
 
-11개 MCP 도구를 라이브 호출해 응답·다운로드 헤더까지 검증한다.
+12개 MCP 도구를 라이브 호출해 응답·다운로드 헤더까지 검증한다.
 크롤러의 self_check_v5_4_1.py와 같은 형식.
 
 실행: python3 self_check.py
@@ -47,7 +47,7 @@ def skip(label, reason):
 
 def main():
     print("=" * 70)
-    print(f"alio-mcp v0.4.1 자체점검 ({datetime.now():%Y-%m-%d %H:%M:%S})")
+    print(f"alio-mcp v0.6.0 자체점검 ({datetime.now():%Y-%m-%d %H:%M:%S})")
     print("테스트 기관: 한국산업단지공단 (apbaId=C0208)")
     print("=" * 70)
 
@@ -77,6 +77,21 @@ def main():
     check("search_organs('산업단지공단')",
           s.get("총_검색결과", 0) >= 1 and any(o["기관ID"] == apba_id for o in s.get("기관", [])),
           f"{s.get('총_검색결과')}건")
+
+    f = m.search_organs(region="대구", org_type="위탁집행")
+    check("search_organs(region=대구, org_type=위탁집행) — 신규 필터",
+          f.get("총_검색결과", 0) >= 1
+          and all("대구" in o["지역"] and "위탁집행" in o["기관유형"]
+                  for o in f.get("기관", [])),
+          f"{f.get('총_검색결과')}건 (전부 대구·위탁집행형)")
+
+    organs_j = m.list_organs("21201", page=1)
+    disc_j = (organs_j.get("기관") or [{}])[0].get("공시번호", "")
+    rd = m.get_report_data(disc_j)
+    check("get_report_data('21201' 징계현황 본문)",
+          isinstance(rd, dict) and rd.get("표_개수", 0) > 0
+          and "징계" in (rd.get("본문텍스트") or ""),
+          f"표 {rd.get('표_개수')}개, 제목={(rd.get('제목') or '')[:24]}")
 
     # ───── [2] 게시판형 자료·첨부·다운로드 ─────
     print("\n[2] 게시판형 자료·첨부·다운로드")

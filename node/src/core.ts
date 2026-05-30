@@ -530,6 +530,90 @@ function addOrgans(dict: Map<string, Institution>, list: any[]): void {
   }
 }
 
+// ─────────────────────────────────────────────────────────
+// 보고서형 본문(HTML 표) 조회 — itemReportRight.do
+// ─────────────────────────────────────────────────────────
+
+/** HTML → 평문 (script/style 제거·태그 제거·엔티티 복원·공백 정규화). html_to_text 포팅. */
+export function htmlToText(html: string): string {
+  let s = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ");
+  s = s.replace(/<[^>]+>/g, " ");
+  s = s
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * HTML <table>들을 행렬(string[][])로 추출. 빈 행·빈 표 제외. parse_html_tables 포팅.
+ * itemReportRight.do는 Vue 레이아웃 table이 섞여 있어 표 경계가 부정확할 수 있으므로
+ * 호출부는 본문 평문(htmlToText)을 항상 함께 제공해 보조한다.
+ */
+export function parseHtmlTables(html: string): string[][][] {
+  const tables: string[][][] = [];
+  const tableRe = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+  let tm: RegExpExecArray | null;
+  while ((tm = tableRe.exec(html)) !== null) {
+    const rows: string[][] = [];
+    const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rm: RegExpExecArray | null;
+    while ((rm = trRe.exec(tm[1])) !== null) {
+      const cells: string[] = [];
+      const cellRe = /<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi;
+      let cm: RegExpExecArray | null;
+      while ((cm = cellRe.exec(rm[1])) !== null) {
+        cells.push(htmlToText(cm[1]));
+      }
+      if (cells.some((c) => c)) rows.push(cells);
+    }
+    if (rows.length > 0) tables.push(rows);
+  }
+  return tables;
+}
+
+/**
+ * 보고서형 공시의 본문을 itemReportRight.do HTML에서 표·평문으로 추출.
+ * fetch_report_tables 포팅. download_report(PDF 저장)와 달리 파일을 만들지 않고
+ * 내용을 즉시 반환한다. 징계현황·임직원수·복리후생비 등 보고서형 항목의 실데이터를
+ * PDF/HWP 변환 없이 반환한다. pdf.json이 "해당 사항이 없는 항목입니다" boilerplate를
+ * 주는 항목(임직원수·임원연봉 등)도 이 HTML 경로는 실데이터다.
+ */
+export async function fetchReportTables(disclosureNo: string): Promise<any> {
+  if (!disclosureNo) return { error: "MISSING: disclosureNo가 필수입니다" };
+  const url = `${BASE_URL}/item/itemReportRight.do`;
+  let resp: Response;
+  try {
+    resp = await retryFetch(url, {
+      method: "GET",
+      searchParams: { disclosureNo },
+      timeoutMs: 30000,
+    });
+  } catch (err) {
+    return { error: `REQUEST_FAILED: ${err}` };
+  }
+  if (resp.status !== 200) return { error: `REQUEST_FAILED: HTTP ${resp.status}` };
+
+  const html = await resp.text();
+  const tables = parseHtmlTables(html);
+  const text = htmlToText(html);
+  if (tables.length === 0 && !text) {
+    return {
+      error: `EMPTY: disclosureNo='${disclosureNo}' 본문 없음 (순수 첨부 항목일 수 있음 — download_* 도구 사용)`,
+    };
+  }
+  return {
+    disclosureNo,
+    제목: text.slice(0, 60).trim(),
+    표_개수: tables.length,
+    표: tables,
+    본문텍스트: text.slice(0, 4000),
+  };
+}
+
 /**
  * ALIO 기관목록 API에서 기관 목록 로드 (지역 정보 포함).
  * 1페이지로 totalPage 파악 후 2~N페이지를 동시성 5로 병렬 수집.

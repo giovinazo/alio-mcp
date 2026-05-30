@@ -1,6 +1,6 @@
 {
   "name": "alio-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MCP server exposing Korea's ALIO public institution disclosure data (한국 공공기관 알리오 항목별공시 MCP) — Node/TypeScript port for MCPB one-click install",
   "type": "module",
   "private": true,

@@ -1,16 +1,17 @@
-"""알리오 항목별공시 MCP 서버 v0.5.0
+"""알리오 항목별공시 MCP 서버 v0.6.0
 
 한국 공공기관 정보공개시스템 알리오(www.alio.go.kr)의 항목별공시
 92개 메뉴와 약 355개 공시 대상 기관 데이터를 LLM 도구로 노출한다.
 
-도구 11개:
+도구 12개:
     list_menus(category, keyword)              — 메뉴 목록 (92개, v0.5.0 키워드 검색 추가)
     list_organs(rootNo, page)                  — 항목별 공시 기관 목록
     list_board_items(rootNo, apbaId, page)     — 게시판형 자료 1페이지
     list_all_board_items(rootNo, apbaId)       — 전체 페이지 자동 순회 (v0.5.0 힌트 개선)
     download_report(disclosureNo, …)           — 공시 보고서 PDF
+    get_report_data(disclosureNo)              — 보고서 본문을 표·평문으로 반환 (v0.6.0)
     download_disclosure_attachment(kind, …)    — 보고서 부속 첨부 file/dfile (v0.4.0)
-    search_organs(name)                        — 기관명 부분 일치 검색
+    search_organs(name, region, org_type)      — 기관명·지역·유형 검색 (v0.6.0 필터 추가)
     list_board_attachments(...)                — 게시판형 자료 첨부 메타
     download_board_attachment(...)             — 게시판형 첨부 다운로드
     list_rules(instName, divis, count_only,    — 기관 내부규정 목록 (v0.4.1
@@ -29,6 +30,7 @@ from alio_core import (
     BASE_URL,
     create_session, retry_request,
     fetch_alio_items,
+    fetch_report_tables,
     load_public_institutions,
     fetch_board_attachment_list, fetch_board_external_links,
     download_board_attachment as _core_download_board,
@@ -300,20 +302,31 @@ _INST_CACHE: dict = {}
 
 
 @mcp.tool()
-def search_organs(name: str) -> dict:
-    """공공기관 약 355개 중 기관명 부분 일치 검색.
+def search_organs(name: str = "", region: str = "", org_type: str = "") -> dict:
+    """공공기관 약 355개를 기관명·지역·기관유형으로 검색 (부분 일치, AND).
 
     첫 호출 시 알리오 기관목록 API를 1회 호출해 캐시. 이후는 메모리에서 즉시 검색.
+    세 인자는 모두 부분 문자열 매칭이며, 함께 주면 AND로 좁혀진다.
+    셋 다 비우면 에러.
 
     Args:
-        name: 검색 키워드 (부분 문자열). 예: '산업단지', '한국전력'.
+        name: 기관명 부분 문자열. 예: '산업단지', '한국전력'.
+        region: 소재지(본사) 부분 문자열. 예: '대구', '대구광역시', '세종'.
+        org_type: 기관유형 부분 문자열. 예: '위탁집행', '준정부기관(위탁집행형)',
+                  '공기업', '기금관리', '기타공공기관'.
 
     Returns:
-        {"총_검색결과", "기관": [{"기관ID", "기관명", "기관유형", "주무부처", "지역"}, ...]}
-        상위 50건 한정.
+        {"총_검색결과", "조건", "기관": [{"기관ID", "기관명", "기관유형",
+         "주무부처", "지역"}, ...]}  상위 50건 한정.
+
+    예) search_organs(region='대구', org_type='위탁집행')
+        → 대구 소재 위탁집행형 준정부기관 일괄 조회
     """
-    if not name:
-        return {"error": "MISSING: name이 필수입니다"}
+    name = (name or "").strip()
+    region = (region or "").strip()
+    org_type = (org_type or "").strip()
+    if not (name or region or org_type):
+        return {"error": "MISSING: name·region·org_type 중 최소 하나가 필요합니다"}
 
     global _INST_CACHE
     if not _INST_CACHE:
@@ -330,16 +343,50 @@ def search_organs(name: str) -> dict:
             "지역": v["region"],
         }
         for inst_name, v in _INST_CACHE.items()
-        if name.strip() in inst_name
+        if (not name or name in inst_name)
+        and (not region or region in (v.get("region") or ""))
+        and (not org_type or org_type in (v.get("inst_type") or ""))
     ]
 
     if not matches:
-        return {"error": f"NOT_FOUND: '{name}' 포함 기관 없음", "총_검색결과": 0}
+        return {
+            "error": "NOT_FOUND: 조건에 맞는 기관 없음",
+            "총_검색결과": 0,
+            "조건": {"name": name, "region": region, "org_type": org_type},
+        }
 
     return {
         "총_검색결과": len(matches),
+        "조건": {"name": name, "region": region, "org_type": org_type},
         "기관": matches[:50],
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# Tool 12: 보고서 본문(표·평문) 조회 — itemReportRight.do (신규 v0.6.0)
+# ─────────────────────────────────────────────────────────────
+@mcp.tool()
+def get_report_data(disclosureNo: str) -> dict:
+    """보고서형 공시의 본문을 표·평문 텍스트로 반환 (PDF/HWP 우회).
+
+    download_report는 PDF를 저장만 하고 본문을 돌려주지 않는다. 이 도구는
+    itemReportRight.do의 HTML 표를 파싱해 LLM이 바로 읽을 수 있는 행렬·평문으로
+    반환한다. 징계현황·임직원수·복리후생비·임원현황 등 보고서형 항목의 실제
+    내용을 파일 다운로드 없이 확인할 때 사용한다.
+
+    공시번호는 list_organs(rootNo) 또는 list_board_items 응답의 '공시번호'.
+
+    Args:
+        disclosureNo: 공시번호.
+
+    Returns:
+        {"disclosureNo", "제목", "표_개수", "표": [[셀,...],...], "본문텍스트"}
+        본문이 비면 EMPTY 에러 (순수 첨부 항목 — download_* 사용 안내).
+    """
+    if not disclosureNo:
+        return {"error": "MISSING: disclosureNo가 필수입니다"}
+    session = create_session()
+    return fetch_report_tables(session, disclosureNo)
 
 
 # ─────────────────────────────────────────────────────────────

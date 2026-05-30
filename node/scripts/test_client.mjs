@@ -25,7 +25,7 @@ const check = (cond, label, extra = "") => {
 // ── 0) listTools
 const { tools } = await client.listTools();
 log(`\n[0] listTools → ${tools.length}개`);
-check(tools.length === 11, "도구 11개 노출", `(실제 ${tools.length})`);
+check(tools.length === 12, "도구 12개 노출", `(실제 ${tools.length})`);
 log("    " + tools.map((t) => t.name).join(", "));
 
 // ── 1) search_organs
@@ -33,6 +33,28 @@ log(`\n[1] search_organs(name="산업단지")`);
 const so = await call("search_organs", { name: "산업단지" });
 const sandan = so?.기관?.[0];
 check(sandan?.기관ID === "C0208", "산단공 C0208", `→ ${sandan?.기관명}`);
+
+// ── 1b) search_organs 지역·유형 필터 (신규 v1.1.0)
+log(`\n[1b] search_organs(region="대구", org_type="위탁집행")`);
+const sf = await call("search_organs", { region: "대구", org_type: "위탁집행" });
+check(
+  sf?.총_검색결과 >= 1 &&
+    (sf?.기관 ?? []).every((o) => o.지역.includes("대구") && o.기관유형.includes("위탁집행")),
+  "대구·위탁집행형 필터",
+  `→ ${sf?.총_검색결과}건`
+);
+log("    " + (sf?.기관 ?? []).map((o) => o.기관명).join(", "));
+
+// ── 1c) get_report_data 징계현황 본문 (신규 v1.1.0)
+log(`\n[1c] get_report_data (21201 징계현황 본문)`);
+const oj = await call("list_organs", { rootNo: "21201" });
+const discJ = oj?.기관?.find((o) => o.공시번호)?.공시번호;
+const rd = await call("get_report_data", { disclosureNo: String(discJ) });
+check(
+  rd?.표_개수 > 0 && (rd?.본문텍스트 ?? "").includes("징계"),
+  "징계현황 본문 표 추출",
+  `→ 표 ${rd?.표_개수}개, 제목=${(rd?.제목 ?? "").slice(0, 20)}`
+);
 
 // ── 2) list_menus (category+keyword AND)
 log(`\n[2] list_menus(keyword="감사")`);

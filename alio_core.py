@@ -658,6 +658,86 @@ def download_attachment(session, kind, file_info, save_dir,
 # 공공기관 목록 (지역 포함, 병렬 처리)
 # ─────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────
+# 보고서형 본문(HTML 표) 조회 — itemReportRight.do
+# ─────────────────────────────────────────────────────────
+
+def html_to_text(html: str) -> str:
+    """HTML → 평문 (script/style 제거·태그 제거·엔티티 복원·공백 정규화)."""
+    s = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html)
+    s = re.sub(r"<[^>]+>", " ", s)
+    s = (s.replace("&nbsp;", " ").replace("&amp;", "&")
+           .replace("&lt;", "<").replace("&gt;", ">")
+           .replace("&quot;", '"').replace("&#39;", "'"))
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def parse_html_tables(html: str) -> list:
+    """HTML <table>들을 행렬(list[list[str]])로 추출. 빈 행·빈 표 제외.
+
+    itemReportRight.do는 Vue 레이아웃 table이 섞여 있어 비탐욕 매칭으로
+    가장 안쪽 셀까지 평문화한다. 표 경계가 부정확할 수 있으므로 본문
+    평문(html_to_text)을 항상 함께 제공해 보조한다.
+    """
+    tables = []
+    for tm in re.finditer(r"(?is)<table[^>]*>(.*?)</table>", html):
+        rows = []
+        for rm in re.finditer(r"(?is)<tr[^>]*>(.*?)</tr>", tm.group(1)):
+            cells = [
+                html_to_text(c)
+                for c in re.findall(r"(?is)<t[hd][^>]*>(.*?)</t[hd]>", rm.group(1))
+            ]
+            if any(cell for cell in cells):
+                rows.append(cells)
+        if rows:
+            tables.append(rows)
+    return tables
+
+
+def fetch_report_tables(session, disclosure_no: str) -> dict:
+    """보고서형 공시의 본문을 itemReportRight.do HTML에서 표·평문으로 추출.
+
+    download_report(PDF 저장)와 달리 파일을 만들지 않고 내용을 즉시 반환한다.
+    징계현황·임직원수·복리후생비 등 보고서형 항목의 실데이터를 PDF/HWP 변환
+    없이 LLM이 바로 읽을 수 있다. pdf.json이 "해당 사항이 없는 항목입니다"
+    boilerplate를 주는 항목(임직원수·임원연봉 등)도 이 HTML 경로는 실데이터다.
+
+    Args:
+        session: create_session() 세션.
+        disclosure_no: 공시번호 (list_organs / itemOrganListJung의 disclosureNo).
+
+    반환:
+        성공: {"disclosureNo", "제목", "표_개수", "표": [[셀,...],...], "본문텍스트"}
+        실패: {"error": "..."}
+    """
+    if not disclosure_no:
+        return {"error": "MISSING: disclosureNo가 필수입니다"}
+
+    url = f"{BASE_URL}/item/itemReportRight.do"
+    try:
+        resp = retry_request(session, "GET", url,
+                             params={"disclosureNo": disclosure_no})
+        if resp.status_code != 200:
+            return {"error": f"REQUEST_FAILED: HTTP {resp.status_code}"}
+    except (requests.RequestException, OSError) as e:
+        return {"error": f"REQUEST_FAILED: {e}"}
+
+    html = resp.text
+    tables = parse_html_tables(html)
+    text = html_to_text(html)
+    if not tables and not text:
+        return {"error": f"EMPTY: disclosureNo='{disclosure_no}' 본문 없음 "
+                          "(순수 첨부 항목일 수 있음 — download_* 도구 사용)"}
+
+    return {
+        "disclosureNo": disclosure_no,
+        "제목": text[:60].strip(),
+        "표_개수": len(tables),
+        "표": tables,
+        "본문텍스트": text[:4000],
+    }
+
+
 def load_public_institutions(progress_callback=None):
     """ALIO 기관목록 API에서 기관 목록 로드 (지역 정보 포함).
 
