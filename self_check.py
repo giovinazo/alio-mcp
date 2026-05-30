@@ -47,7 +47,7 @@ def skip(label, reason):
 
 def main():
     print("=" * 70)
-    print(f"alio-mcp v0.7.0 자체점검 ({datetime.now():%Y-%m-%d %H:%M:%S})")
+    print(f"alio-mcp v0.8.0 자체점검 ({datetime.now():%Y-%m-%d %H:%M:%S})")
     print("테스트 기관: 한국산업단지공단 (apbaId=C0208)")
     print("=" * 70)
 
@@ -228,6 +228,40 @@ def main():
     check("search_organs truncated 필드",
           "truncated" in big and "표시" in big,
           f"→ 총 {big.get('총_검색결과')}, truncated={big.get('truncated')}")
+
+    # ───── [7] v0.8.0 신규 도구 4종 ─────
+    print("\n[7] v0.8.0 신규 도구")
+
+    prof = m.get_organ_profile(apbaId=apba_id)
+    check("get_organ_profile(C0208)",
+          prof.get("기관명") == inst_name and bool(prof.get("기관장")) and bool(prof.get("홈페이지")),
+          f"→ 장={prof.get('기관장')}, HP={prof.get('홈페이지')}")
+
+    tree = m.list_menus_tree()
+    check("list_menus_tree 계층+파일유형",
+          isinstance(tree, dict) and len(tree) >= 3
+          and all("파일유형" in it for v in tree.values() for it in v[:1]),
+          f"→ 대분류 {len(tree)}개")
+
+    disc = m.get_structured_summary("discipline", apbaId=apba_id)
+    check("get_structured_summary(discipline)",
+          isinstance(disc.get("징계건수"), dict) and disc.get("총건수", -1) >= 0,
+          f"→ 총 {disc.get('총건수')}건")
+
+    integ = m.get_structured_summary("integrity", apbaId=apba_id)
+    check("get_structured_summary(integrity)",
+          isinstance(integ.get("연도별등급"), dict) and len(integ.get("연도", [])) > 0,
+          f"→ 연도 {integ.get('연도')}")
+
+    safe = m.get_structured_summary("safety", apbaId=apba_id)
+    check("get_structured_summary(safety) 안내에러",
+          str(safe.get("error", "")).startswith("UNSUPPORTED"),
+          f"→ {str(safe.get('error', ''))[:30]}")
+
+    cmp = m.compare_organs("21201", names=f"{inst_name},한국전력공사")
+    check("compare_organs 2기관 병렬",
+          cmp.get("비교기관수") == 2 and all(r.get("표_개수", 0) > 0 for r in cmp.get("결과", [])),
+          f"→ {[r['기관명'] for r in cmp.get('결과', [])]}")
 
     # ───── 정리 ─────
     print()

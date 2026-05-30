@@ -20,6 +20,14 @@ import {
   fetchAlioItems,
   loadPublicInstitutions,
   fetchReportTables,
+  fetchOrganProfile,
+  fetchOrganDisclosureMap,
+  summarizeDisciplineTable,
+  summarizeIntegrityTable,
+  detectEndpointKind,
+  buildItemRootNo,
+  buildItemDisplayName,
+  runLimited,
   fetchBoardAttachmentList,
   fetchBoardExternalLinks,
   downloadBoardAttachment,
@@ -36,7 +44,7 @@ import {
   type Institution,
 } from "./core";
 
-const server = new McpServer({ name: "alio", version: "1.2.0" });
+const server = new McpServer({ name: "alio", version: "1.3.0" });
 // 다운로드 기본 저장 폴더 — ALIO_DOWNLOAD_DIR(manifest user_config로 주입) 우선,
 // 없으면 OS 무관 ~/Downloads/alio. /tmp는 macOS 재부팅 삭제·Windows 경로 무효라 제외.
 const DEFAULT_SAVE_DIR = (() => {
@@ -100,6 +108,37 @@ server.registerTool(
         보고서형: (m?.reportYn ?? "").toUpperCase() === "Y",
       }))
     );
+  }
+);
+
+// ─────────────────────────────────────────────────────────────
+// Tool 13: list_menus_tree — 메뉴 계층 트리 (신규 v1.3.0)
+// ─────────────────────────────────────────────────────────────
+server.registerTool(
+  "list_menus_tree",
+  {
+    title: "메뉴 계층 트리",
+    description:
+      "92개 항목을 대분류>중분류 계층 트리로 반환(파일유형 포함). list_menus는 평면 목록(검색·필터용)이고, " +
+      "이 도구는 계층 + 파일유형(rule/pdf+file/pdf+file+dfile/file — 어떤 다운로드 도구를 쓸지 라우팅 힌트). " +
+      "반환: {대분류: [{중분류, 항목명, rootNo, 파일유형, 보고서형}]}.",
+    inputSchema: {},
+  },
+  async () => {
+    const items = await fetchAlioItems();
+    if (!items.length) return jsonResult({ error: "항목 메뉴 로드 실패" });
+    const tree: Record<string, any[]> = {};
+    for (const it of items) {
+      const lcdnm = it?.lcdnm ?? "기타";
+      (tree[lcdnm] ??= []).push({
+        중분류: it?.nmcdnm ?? "",
+        항목명: buildItemDisplayName(it),
+        rootNo: buildItemRootNo(it),
+        파일유형: detectEndpointKind(it),
+        보고서형: String(it?.reportYn ?? "").toUpperCase() === "Y",
+      });
+    }
+    return jsonResult(tree);
   }
 );
 
@@ -352,6 +391,139 @@ server.registerTool(
       조건,
       기관: matches.slice(0, 50),
     });
+  }
+);
+
+// ─────────────────────────────────────────────────────────────
+// Tool 14~16: 기관 프로필 / 다중 비교 / 정형 집계 (신규 v1.3.0)
+// ─────────────────────────────────────────────────────────────
+async function resolveApbaId(name: string): Promise<string | null> {
+  if (!instCache) {
+    instCache = await loadPublicInstitutions();
+    if (instCache.size === 0) {
+      instCache = null;
+      return null;
+    }
+  }
+  for (const [n, v] of instCache) {
+    if (n.includes(name)) return v.apba_id;
+  }
+  return null;
+}
+
+server.registerTool(
+  "get_organ_profile",
+  {
+    title: "기관 프로필 상세",
+    description:
+      "기관 마스터 정보(기관장·홈페이지·주소·설립일·예산·소개·유튜브) 조회. search_organs가 주지 않는 상세. " +
+      "apbaId 우선, name만 주면 기관명 부분일치로 해석. 기관의 공시 목록은 list_organs(rootNo). " +
+      "반환: {기관ID, 기관명, 기관유형, 주무부처, 기관장, 홈페이지, 주소, 지역, 설립일, 예산, 소개, 유튜브, 상위기관}.",
+    inputSchema: {
+      apbaId: z.string().default("").describe("기관ID(예: 'C0208'). search_organs/list_organs 응답의 '기관ID'."),
+      name: z.string().default("").describe("기관명 부분 문자열(apbaId 없을 때)."),
+    },
+  },
+  async ({ apbaId, name }) => {
+    const aid0 = (apbaId ?? "").trim();
+    const nm = (name ?? "").trim();
+    if (!aid0 && !nm) return jsonResult({ error: "MISSING: apbaId 또는 name이 필요합니다" });
+    let aid = aid0;
+    if (!aid) {
+      const r = await resolveApbaId(nm);
+      if (!r) return jsonResult({ error: `NOT_FOUND: '${nm}' 포함 기관 없음` });
+      aid = r;
+    }
+    return jsonResult(await fetchOrganProfile(aid));
+  }
+);
+
+server.registerTool(
+  "compare_organs",
+  {
+    title: "다중 기관 일괄 비교",
+    description:
+      "여러 기관의 같은 항목(rootNo) 보고서 본문을 병렬로 받아 비교. 'get_report_data를 기관마다 반복'을 한 번에. " +
+      "기관은 names(콤마구분 기관명) 또는 apbaIds(콤마구분 기관ID)로 지정(최대 8개). " +
+      "반환: {rootNo, 비교기관수, 결과:[{기관명, apbaId, disclosureNo, 표_개수, 핵심표, 본문요약, note}]}.",
+    inputSchema: {
+      rootNo: z.string().describe("항목 rootNo(예: '21201' 징계제도, '20201' 임직원수). 보고서형."),
+      names: z.string().default("").describe("콤마구분 기관명. search 캐시로 기관ID 해석."),
+      apbaIds: z.string().default("").describe("콤마구분 기관ID(예: 'C0208,C0247')."),
+    },
+  },
+  async ({ rootNo, names, apbaIds }) => {
+    if (!rootNo) return jsonResult({ error: "MISSING: rootNo가 필수입니다" });
+    let ids = (apbaIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (!ids.length && names) {
+      for (const nm of names.split(",").map((s) => s.trim()).filter(Boolean)) {
+        const hit = await resolveApbaId(nm);
+        if (hit) ids.push(hit);
+      }
+    }
+    if (!ids.length) return jsonResult({ error: "MISSING: names 또는 apbaIds로 기관을 지정하세요" });
+    ids = ids.slice(0, 8);
+    const dmap = await fetchOrganDisclosureMap(rootNo, ids);
+    const results: any[] = [];
+    await runLimited(ids, 5, async (aid) => {
+      const info = dmap[aid];
+      if (!info || !info.disclosureNo) {
+        results.push({ 기관명: info?.기관명 ?? aid, apbaId: aid, disclosureNo: "", 표_개수: 0, 핵심표: [], 본문요약: null, note: "공시 없음(미공시)" });
+        return;
+      }
+      const rt = await fetchReportTables(info.disclosureNo);
+      if (rt.error) {
+        results.push({ 기관명: info.기관명, apbaId: aid, disclosureNo: info.disclosureNo, 표_개수: 0, 핵심표: [], 본문요약: null, note: String(rt.error).slice(0, 40) });
+        return;
+      }
+      const tables: string[][][] = rt["표"] ?? [];
+      const coreTbl = tables.length ? tables.reduce((a, b) => (b.length > a.length ? b : a)).slice(0, 20) : [];
+      results.push({ 기관명: info.기관명, apbaId: aid, disclosureNo: info.disclosureNo, 표_개수: rt["표_개수"] ?? 0, 핵심표: coreTbl, 본문요약: (rt["본문텍스트"] ?? "").slice(0, 1200), note: null });
+    });
+    return jsonResult({ rootNo: rootNo.split(",")[0], 비교기관수: results.length, 결과: results });
+  }
+);
+
+server.registerTool(
+  "get_structured_summary",
+  {
+    title: "정형 집계 (징계·청렴도)",
+    description:
+      "기관의 정형 공시를 집계 — 징계종류별 건수(kind='discipline', rootNo 21211) 또는 청렴도 연도별 등급" +
+      "(kind='integrity', 40211). kind='safety'(사망자수)는 수치가 첨부(.hwp) 안에 있어 자동집계 불가. " +
+      "반환: discipline→{징계건수, 총건수, 기타종류}, integrity→{연도별등급, 연도}.",
+    inputSchema: {
+      kind: z.string().describe("'discipline'(징계종류별 건수) 또는 'integrity'(청렴도 연도별 등급)."),
+      apbaId: z.string().default("").describe("기관ID(예: 'C0208'). 우선."),
+      name: z.string().default("").describe("기관명 부분 문자열(apbaId 없을 때)."),
+    },
+  },
+  async ({ kind, apbaId, name }) => {
+    const kindRoot: Record<string, string> = { discipline: "21211", integrity: "40211" };
+    if (kind === "safety")
+      return jsonResult({
+        error: "UNSUPPORTED: 사망자수는 안전경영책임보고서 첨부(.hwp/.pdf) 안에 있어 자동집계 불가",
+        hint: "list_organs('70401')로 공시 확인 후 download_disclosure_attachment로 첨부를 받으세요.",
+      });
+    if (!(kind in kindRoot)) return jsonResult({ error: `INVALID: kind는 'discipline' 또는 'integrity' (받음: '${kind}')` });
+    const aid0 = (apbaId ?? "").trim();
+    const nm = (name ?? "").trim();
+    if (!aid0 && !nm) return jsonResult({ error: "MISSING: apbaId 또는 name이 필요합니다" });
+    let aid = aid0;
+    if (!aid) {
+      const r = await resolveApbaId(nm);
+      if (!r) return jsonResult({ error: `NOT_FOUND: '${nm}' 포함 기관 없음` });
+      aid = r;
+    }
+    const dmap = await fetchOrganDisclosureMap(kindRoot[kind], [aid]);
+    const info = dmap[aid];
+    if (!info || !info.disclosureNo) return jsonResult({ error: `NOT_FOUND: apbaId='${aid}' ${kind} 공시 없음(미공시 가능)` });
+    const rt = await fetchReportTables(info.disclosureNo);
+    if (rt.error) return jsonResult({ error: rt.error });
+    const base: any = { kind, 기관명: info.기관명, apbaId: aid, disclosureNo: info.disclosureNo };
+    if (kind === "discipline") Object.assign(base, summarizeDisciplineTable(rt["표"] ?? []));
+    else Object.assign(base, summarizeIntegrityTable(rt["표"] ?? []));
+    return jsonResult(base);
   }
 );
 
@@ -615,4 +787,4 @@ server.registerTool(
 // ─────────────────────────────────────────────────────────────
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error("[alio-mcp] stdio 서버 시작 (도구 12개)");
+console.error("[alio-mcp] stdio 서버 시작 (도구 16개)");

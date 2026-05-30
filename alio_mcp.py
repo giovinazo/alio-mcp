@@ -1,9 +1,9 @@
-"""알리오 항목별공시 MCP 서버 v0.7.0
+"""알리오 항목별공시 MCP 서버 v0.8.0
 
 한국 공공기관 정보공개시스템 알리오(www.alio.go.kr)의 항목별공시
 92개 메뉴와 약 355개 공시 대상 기관 데이터를 LLM 도구로 노출한다.
 
-도구 12개:
+도구 16개:
     list_menus(category, keyword)              — 메뉴 목록 (92개, v0.5.0 키워드 검색 추가)
     list_organs(rootNo, page)                  — 항목별 공시 기관 목록
     list_board_items(rootNo, apbaId, page)     — 게시판형 자료 1페이지
@@ -17,11 +17,16 @@
     list_rules(instName, divis, count_only,    — 기관 내부규정 목록 (v0.4.1
                 include_files)                    경량옵션 추가: 다수 기관 카운트 1회 호출)
     download_rule_file(fileNo, …)              — 내부규정 파일 다운로드 (v0.4.0)
+    list_menus_tree()                          — 메뉴 대분류>중분류 트리 (v0.8.0)
+    get_organ_profile(apbaId, name)            — 기관 프로필 상세 (v0.8.0)
+    compare_organs(rootNo, names, apbaIds)     — 다중 기관 본문 병렬 비교 (v0.8.0)
+    get_structured_summary(kind, …)            — 징계·청렴도 정형 집계 (v0.8.0)
 
 코어 라이브러리: ./alio_core.py (alio-crawler와 공유)
 """
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -31,6 +36,9 @@ from alio_core import (
     create_session, retry_request,
     fetch_alio_items,
     fetch_report_tables,
+    fetch_organ_profile, fetch_organ_disclosure_map,
+    summarize_discipline_table, summarize_integrity_table,
+    detect_endpoint_kind, build_item_root_no, build_item_display_name,
     load_public_institutions,
     fetch_board_attachment_list, fetch_board_external_links,
     download_board_attachment as _core_download_board,
@@ -125,6 +133,36 @@ def list_menus(category: str = "", keyword: str = "") -> list[dict]:
         }
         for m in items
     ]
+
+
+# ─────────────────────────────────────────────────────────────
+# Tool 13: 메뉴 계층 트리 (신규 v0.8.0)
+# ─────────────────────────────────────────────────────────────
+@mcp.tool()
+def list_menus_tree() -> dict:
+    """92개 항목을 대분류>중분류 계층 트리로 반환 (파일유형 포함).
+
+    list_menus는 평면 목록(검색·필터용)이고, 이 도구는 대분류>중분류 계층 +
+    항목별 파일유형(rule / pdf+file / pdf+file+dfile / file)을 준다 — 어떤
+    다운로드 도구를 쓸지(download_rule_file / download_report / download_board_*)
+    LLM이 라우팅하는 힌트.
+
+    Returns:
+        {대분류: [{중분류, 항목명, rootNo, 파일유형, 보고서형}, ...], ...}
+    """
+    items = fetch_alio_items()
+    if not items:
+        return {"error": "항목 메뉴 로드 실패"}
+    tree: dict = {}
+    for it in items:
+        tree.setdefault(it.get("lcdnm", "기타"), []).append({
+            "중분류": it.get("nmcdnm", ""),
+            "항목명": build_item_display_name(it),
+            "rootNo": build_item_root_no(it),
+            "파일유형": detect_endpoint_kind(it),
+            "보고서형": (it.get("reportYn") or "").upper() == "Y",
+        })
+    return tree
 
 
 # ─────────────────────────────────────────────────────────────
@@ -408,6 +446,147 @@ def get_report_data(disclosureNo: str) -> dict:
         return {"error": "MISSING: disclosureNo가 필수입니다"}
     session = create_session()
     return fetch_report_tables(session, disclosureNo)
+
+
+# ─────────────────────────────────────────────────────────────
+# Tool 14: 기관 프로필 상세 (신규 v0.8.0)
+# ─────────────────────────────────────────────────────────────
+def _resolve_apba_id(name: str):
+    """기관명 부분일치로 apbaId 해석 (_INST_CACHE 사용). 첫 매칭 반환."""
+    global _INST_CACHE
+    if not _INST_CACHE:
+        _INST_CACHE = load_public_institutions()
+    return next((v["apba_id"] for n, v in _INST_CACHE.items() if name in n), None)
+
+
+@mcp.tool()
+def get_organ_profile(apbaId: str = "", name: str = "") -> dict:
+    """기관 마스터 정보(기관장·홈페이지·주소·설립일·예산·소개·유튜브) 조회.
+
+    search_organs가 주지 않는 상세 프로필. apbaId 우선, name만 주면 기관명
+    부분일치로 해석. 기관의 공시 목록은 list_organs(rootNo)를 쓴다.
+
+    Args:
+        apbaId: 기관ID (예: 'C0208'). search_organs/list_organs 응답의 '기관ID'.
+        name: 기관명 부분 문자열(apbaId 없을 때).
+
+    Returns:
+        {기관ID, 기관명, 기관유형, 주무부처, 기관장, 홈페이지, 주소, 지역,
+         설립일, 예산, 소개, 유튜브, 상위기관, submissionNo} | {"error": ...}
+    """
+    aid = (apbaId or "").strip()
+    nm = (name or "").strip()
+    if not aid and not nm:
+        return {"error": "MISSING: apbaId 또는 name이 필요합니다"}
+    if not aid:
+        aid = _resolve_apba_id(nm)
+        if not aid:
+            return {"error": f"NOT_FOUND: '{nm}' 포함 기관 없음"}
+    return fetch_organ_profile(create_session(), aid)
+
+
+# ─────────────────────────────────────────────────────────────
+# Tool 15: 다중 기관 일괄 비교 (신규 v0.8.0)
+# ─────────────────────────────────────────────────────────────
+@mcp.tool()
+def compare_organs(rootNo: str, names: str = "", apbaIds: str = "") -> dict:
+    """여러 기관의 같은 항목(rootNo) 보고서 본문을 병렬로 받아 비교.
+
+    'get_report_data를 기관마다 반복'을 한 번에 처리한다. 기관은 names(콤마
+    구분 기관명) 또는 apbaIds(콤마구분 기관ID)로 지정(최대 8개).
+
+    Args:
+        rootNo: 항목 rootNo (예: '21201' 징계제도, '20201' 임직원수). 보고서형만.
+        names: 콤마구분 기관명. search 캐시로 기관ID 해석.
+        apbaIds: 콤마구분 기관ID (예: 'C0208,C0247').
+
+    Returns:
+        {rootNo, 비교기관수, 결과: [{기관명, apbaId, disclosureNo, 표_개수,
+         핵심표, 본문요약, note}]}
+    """
+    if not rootNo:
+        return {"error": "MISSING: rootNo가 필수입니다"}
+    ids = [x.strip() for x in (apbaIds or "").split(",") if x.strip()]
+    if not ids and names:
+        for nm in [x.strip() for x in names.split(",") if x.strip()]:
+            hit = _resolve_apba_id(nm)
+            if hit:
+                ids.append(hit)
+    if not ids:
+        return {"error": "MISSING: names 또는 apbaIds로 기관을 지정하세요"}
+    ids = ids[:8]
+    session = create_session()
+    dmap = fetch_organ_disclosure_map(session, rootNo, ids)
+
+    def _one(aid):
+        info = dmap.get(aid)
+        if not info or not info["disclosureNo"]:
+            return {"기관명": (info or {}).get("기관명", aid), "apbaId": aid,
+                    "disclosureNo": "", "표_개수": 0, "핵심표": [],
+                    "본문요약": None, "note": "공시 없음(미공시)"}
+        rt = fetch_report_tables(session, info["disclosureNo"])
+        if "error" in rt:
+            return {"기관명": info["기관명"], "apbaId": aid,
+                    "disclosureNo": info["disclosureNo"], "표_개수": 0,
+                    "핵심표": [], "본문요약": None, "note": rt["error"][:40]}
+        tables = rt.get("표", [])
+        return {"기관명": info["기관명"], "apbaId": aid,
+                "disclosureNo": info["disclosureNo"],
+                "표_개수": rt.get("표_개수", 0),
+                "핵심표": (max(tables, key=len)[:20] if tables else []),
+                "본문요약": (rt.get("본문텍스트") or "")[:1200], "note": None}
+
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        results = list(ex.map(_one, ids))
+    return {"rootNo": rootNo.split(",")[0], "비교기관수": len(results), "결과": results}
+
+
+# ─────────────────────────────────────────────────────────────
+# Tool 16: 정형 집계 (징계종류·청렴도 등급) (신규 v0.8.0)
+# ─────────────────────────────────────────────────────────────
+@mcp.tool()
+def get_structured_summary(kind: str, apbaId: str = "", name: str = "") -> dict:
+    """기관의 정형 공시를 집계 — 징계종류별 건수 또는 청렴도 연도별 등급.
+
+    Args:
+        kind: 'discipline'(징계처분 종류별 건수, rootNo 21211) 또는
+              'integrity'(청렴도 연도별 등급, 40211).
+              'safety'(사망자수)는 수치가 첨부(.hwp) 안에 있어 자동집계 불가.
+        apbaId: 기관ID(예: 'C0208'). 우선.
+        name: 기관명 부분 문자열(apbaId 없을 때).
+
+    Returns:
+        discipline → {kind, 기관명, apbaId, disclosureNo, 징계건수, 총건수, 기타종류}
+        integrity  → {kind, 기관명, apbaId, disclosureNo, 연도별등급, 연도}
+    """
+    kind_root = {"discipline": "21211", "integrity": "40211"}
+    if kind == "safety":
+        return {"error": "UNSUPPORTED: 사망자수는 안전경영책임보고서 첨부(.hwp/.pdf) 안에 있어 자동집계 불가",
+                "hint": "list_organs('70401')로 공시 확인 후 download_disclosure_attachment로 첨부를 받으세요."}
+    if kind not in kind_root:
+        return {"error": f"INVALID: kind는 'discipline' 또는 'integrity' (받음: '{kind}')"}
+    aid = (apbaId or "").strip()
+    nm = (name or "").strip()
+    if not aid and not nm:
+        return {"error": "MISSING: apbaId 또는 name이 필요합니다"}
+    if not aid:
+        aid = _resolve_apba_id(nm)
+        if not aid:
+            return {"error": f"NOT_FOUND: '{nm}' 포함 기관 없음"}
+    session = create_session()
+    info = fetch_organ_disclosure_map(session, kind_root[kind], [aid]).get(aid)
+    if not info or not info["disclosureNo"]:
+        return {"error": f"NOT_FOUND: apbaId='{aid}' {kind} 공시 없음(미공시 가능)"}
+    rt = fetch_report_tables(session, info["disclosureNo"])
+    if "error" in rt:
+        return {"error": rt["error"]}
+    base = {"kind": kind, "기관명": info["기관명"], "apbaId": aid,
+            "disclosureNo": info["disclosureNo"]}
+    if kind == "discipline":
+        base.update(summarize_discipline_table(rt.get("표", [])))
+    else:
+        base.update(summarize_integrity_table(rt.get("표", [])))
+    return base
 
 
 # ─────────────────────────────────────────────────────────────

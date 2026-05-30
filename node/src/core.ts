@@ -208,7 +208,7 @@ export async function fetchJson(url: string, opts: RetryOptions = {}): Promise<a
 // 동시성 제한 헬퍼 (Python ThreadPoolExecutor(max_workers=N) 대응)
 // ─────────────────────────────────────────────────────────
 
-async function runLimited<T>(
+export async function runLimited<T>(
   items: T[],
   limit: number,
   fn: (item: T) => Promise<void>
@@ -359,6 +359,30 @@ function boardParams(apbaId: string, meta: ViolationMeta, rfn: string): Record<s
     reportGbn: "N",
     bid_type: meta.bid_type ?? "",
   };
+}
+
+// ─────────────────────────────────────────────────────────
+// 메뉴 항목 유틸 (build_item_* / detect_endpoint_kind 포팅)
+// ─────────────────────────────────────────────────────────
+
+export function buildItemDisplayName(item: any): string {
+  const scdnm = (item?.scdnm ?? "").trim();
+  const mcdnm = (item?.mcdnm ?? "").trim();
+  return scdnm || mcdnm || (item?.mcd ?? "(미상)");
+}
+
+export function buildItemRootNo(item: any): string {
+  // Python `reportNos or mcd` — 빈 문자열도 falsy 처리(||)
+  return String(item?.reportNos || item?.mcd || "").trim();
+}
+
+export function detectEndpointKind(item: any): string {
+  const mcd = item?.mcd ?? "";
+  if (mcd === "21110") return "rule";
+  const reportNos = String(item?.reportNos ?? "");
+  if (reportNos.includes("70401")) return "pdf+file+dfile";
+  if (String(item?.reportYn ?? "").toUpperCase() === "Y") return "pdf+file";
+  return "file";
 }
 
 /**
@@ -670,6 +694,138 @@ export async function loadPublicInstitutions(): Promise<Map<string, Institution>
     console.error(`공공기관 목록 로드 실패: ${err}`);
     return dict;
   }
+}
+
+// ─────────────────────────────────────────────────────────
+// 기관 프로필 / 다중기관 disclosureNo / 정형 집계 (v1.3.0)
+// ─────────────────────────────────────────────────────────
+
+function cleanField(v: any): string {
+  if (v === null || v === undefined) return "";
+  const s = String(v).trim();
+  return ["none", "null"].includes(s.toLowerCase()) ? "" : s;
+}
+
+export async function fetchOrganProfile(apbaId: string): Promise<any> {
+  if (!apbaId) return { error: "MISSING: apba_id가 필수입니다" };
+  const url = `${BASE_URL}/organ/findOrganApbaList.json`;
+  const body = { apbaType: [], jidtDptm: [], area: [], apba_id: apbaId, pageNo: 1 };
+  let result: any[];
+  try {
+    const resp = await retryFetch(url, {
+      method: "POST",
+      jsonBody: body,
+      headers: { ...JSON_HEADERS, "X-Requested-With": "XMLHttpRequest" },
+      timeoutMs: 30000,
+    });
+    if (resp.status !== 200) return { error: `REQUEST_FAILED: HTTP ${resp.status}` };
+    const node = (((await resp.json()) as any)?.data ?? {})?.organList ?? {};
+    result = Array.isArray(node) ? node : node?.result ?? [];
+  } catch (e: any) {
+    return { error: `REQUEST_FAILED: ${e?.message ?? e}` };
+  }
+  const match = (result ?? []).find((o: any) => o?.apbaId === apbaId);
+  if (!match) return { error: `NOT_FOUND: apba_id='${apbaId}' 기관 없음` };
+  return {
+    기관ID: match.apbaId ?? "",
+    기관명: match.apbaNa ?? "",
+    기관유형: cleanField(match.typeNa),
+    주무부처: cleanField(match.jidtNa),
+    기관장: cleanField(match.ceo),
+    홈페이지: cleanField(match.homepage),
+    주소: cleanField(match.addr1),
+    지역: cleanField(match.addrCd),
+    설립일: cleanField(match.fdate),
+    예산: cleanField(match.fmoney),
+    소개: cleanField(match.contents).replace(/&cr;/g, "\n"),
+    유튜브: cleanField(match.youtUrl),
+    상위기관: cleanField(match.parnApbaNa),
+    submissionNo: cleanField(match.submissionNo),
+  };
+}
+
+export async function fetchOrganDisclosureMap(
+  rootNo: string,
+  apbaIds: string[]
+): Promise<Record<string, { 기관명: string; disclosureNo: string; submissionNo: string }>> {
+  const primary = (rootNo ?? "").split(",")[0].trim();
+  if (!primary) return {};
+  const want = new Set(apbaIds ?? []);
+  const url = `${BASE_URL}/item/itemOrganListJung.json`;
+  const body = { reportFormRootNo: primary, apbaType: [], jidtDptm: [], area: [], apba_id: "", pageNo: 1 };
+  let organs: any[];
+  try {
+    const resp = await retryFetch(url, { method: "POST", jsonBody: body, headers: JSON_HEADERS, timeoutMs: 30000 });
+    const node = (((await resp.json()) as any)?.data ?? {})?.organList ?? [];
+    organs = Array.isArray(node) ? node : node?.result ?? [];
+  } catch {
+    return {};
+  }
+  const out: Record<string, any> = {};
+  for (const o of organs ?? []) {
+    if (want.has(o?.apbaId)) {
+      out[o.apbaId] = {
+        기관명: o?.apbaNa ?? "",
+        disclosureNo: (o?.disclosureNo ?? "").trim(),
+        submissionNo: (o?.submissionNo ?? "").trim(),
+      };
+    }
+  }
+  return out;
+}
+
+const DISCIPLINE_CATS = ["파면", "해임", "강등", "정직", "감봉", "견책"];
+const YEAR_RE = /^(\d{4})년$/;
+
+export function summarizeDisciplineTable(tables: string[][][]): any {
+  const counts: Record<string, number> = {};
+  for (const c of DISCIPLINE_CATS) counts[c] = 0;
+  counts["기타"] = 0;
+  const others: string[] = [];
+  let total = 0;
+  for (const tbl of tables ?? []) {
+    if (!tbl?.length || !tbl[0].includes("징계종류")) continue;
+    const col = tbl[0].indexOf("징계종류");
+    for (const row of tbl.slice(1)) {
+      if (col >= row.length) continue;
+      const jong = (row[col] ?? "").trim();
+      if (!jong) continue;
+      total++;
+      if (jong.includes("출근정지")) {
+        counts["정직"]++;
+        continue;
+      }
+      const matched = DISCIPLINE_CATS.find((c) => jong.includes(c));
+      if (matched) counts[matched]++;
+      else {
+        counts["기타"]++;
+        others.push(jong);
+      }
+    }
+    break;
+  }
+  return { 징계건수: counts, 총건수: total, 기타종류: others };
+}
+
+export function summarizeIntegrityTable(tables: string[][][]): any {
+  for (const tbl of tables ?? []) {
+    if (!tbl?.length) continue;
+    const yearCols: [number, string][] = [];
+    tbl[0].forEach((h, i) => {
+      const m = YEAR_RE.exec((h ?? "").trim());
+      if (m) yearCols.push([i, m[1]]);
+    });
+    if (!yearCols.length) continue;
+    const gradeRow = tbl.slice(1).find((r) => r?.length && (r[0] ?? "").includes("청렴도"));
+    if (!gradeRow) continue;
+    const grades: Record<string, string> = {};
+    for (const [i, yr] of yearCols) {
+      const val = i < gradeRow.length ? (gradeRow[i] ?? "").trim() : "";
+      grades[yr] = val && val !== "해당없음" ? val : "-";
+    }
+    return { 연도별등급: grades, 연도: yearCols.map(([, yr]) => yr) };
+  }
+  return { 연도별등급: {}, 연도: [] };
 }
 
 // ─────────────────────────────────────────────────────────

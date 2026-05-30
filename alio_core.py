@@ -827,6 +827,161 @@ def load_public_institutions(progress_callback=None):
 
 
 # ─────────────────────────────────────────────────────────
+# 기관 프로필 / 다중기관 disclosureNo / 정형 집계 (v1.3.0)
+# ─────────────────────────────────────────────────────────
+
+def _clean_field(v) -> str:
+    """API 값 정규화 — None/'None'/'null'은 빈 문자열로."""
+    if v is None:
+        return ""
+    s = str(v).strip()
+    return "" if s.lower() in ("none", "null") else s
+
+
+def fetch_organ_profile(session, apba_id: str) -> dict:
+    """findOrganApbaList.json의 apba_id 필터로 기관 마스터 정보 1건 조회.
+
+    search_organs가 주지 않는 기관장·홈페이지·주소·설립일·소개 등을 반환한다.
+    반환: {기관ID, 기관명, 기관유형, 주무부처, 기관장, 홈페이지, 주소, 지역,
+           설립일, 예산, 소개, 유튜브, 상위기관, submissionNo} | {"error": ...}
+    """
+    if not apba_id:
+        return {"error": "MISSING: apba_id가 필수입니다"}
+    url = f"{BASE_URL}/organ/findOrganApbaList.json"
+    headers = {"Content-Type": "application/json;charset=UTF-8",
+               "X-Requested-With": "XMLHttpRequest"}
+    body = {"apbaType": [], "jidtDptm": [], "area": [], "apba_id": apba_id, "pageNo": 1}
+    try:
+        resp = retry_request(session, "POST", url, json=body, headers=headers, timeout=30)
+        if resp.status_code != 200:
+            return {"error": f"REQUEST_FAILED: HTTP {resp.status_code}"}
+        node = resp.json().get("data", {}).get("organList", {})
+        result = node.get("result", []) if isinstance(node, dict) else (node or [])
+    except (requests.RequestException, OSError, ValueError) as e:
+        return {"error": f"REQUEST_FAILED: {e}"}
+    match = next((o for o in result if o.get("apbaId") == apba_id), None)
+    if not match:
+        return {"error": f"NOT_FOUND: apba_id='{apba_id}' 기관 없음"}
+    return {
+        "기관ID": match.get("apbaId", ""),
+        "기관명": match.get("apbaNa", ""),
+        "기관유형": _clean_field(match.get("typeNa")),
+        "주무부처": _clean_field(match.get("jidtNa")),
+        "기관장": _clean_field(match.get("ceo")),
+        "홈페이지": _clean_field(match.get("homepage")),
+        "주소": _clean_field(match.get("addr1")),
+        "지역": _clean_field(match.get("addrCd")),
+        "설립일": _clean_field(match.get("fdate")),
+        "예산": _clean_field(match.get("fmoney")),
+        "소개": _clean_field(match.get("contents")).replace("&cr;", "\n"),
+        "유튜브": _clean_field(match.get("youtUrl")),
+        "상위기관": _clean_field(match.get("parnApbaNa")),
+        "submissionNo": _clean_field(match.get("submissionNo")),
+    }
+
+
+def fetch_organ_disclosure_map(session, root_no: str, apba_ids) -> dict:
+    """itemOrganListJung 1회 호출로 지정 기관들의 disclosureNo만 추출.
+
+    itemOrganListJung은 apba_id 필터를 무시하므로 전체를 받아 클라이언트에서
+    apba_ids만 추린다. 전체 organList는 반환하지 않는다(토큰 절약).
+    반환: {apba_id: {"기관명", "disclosureNo", "submissionNo"}, ...}
+    """
+    primary = (root_no or "").split(",")[0].strip()
+    if not primary:
+        return {}
+    want = set(apba_ids or [])
+    url = f"{BASE_URL}/item/itemOrganListJung.json"
+    body = {"reportFormRootNo": primary, "apbaType": [], "jidtDptm": [],
+            "area": [], "apba_id": "", "pageNo": 1}
+    try:
+        resp = retry_request(session, "POST", url, json=body,
+                             headers={"Content-Type": "application/json;charset=UTF-8"}, timeout=30)
+        organs = (resp.json().get("data") or {}).get("organList", [])
+        if isinstance(organs, dict):
+            organs = organs.get("result", [])
+    except (requests.RequestException, OSError, ValueError):
+        return {}
+    out = {}
+    for o in (organs or []):
+        aid = o.get("apbaId")
+        if aid in want:
+            out[aid] = {
+                "기관명": o.get("apbaNa", ""),
+                "disclosureNo": (o.get("disclosureNo") or "").strip(),
+                "submissionNo": (o.get("submissionNo") or "").strip(),
+            }
+    return out
+
+
+# 징계종류 표준 6종 (중징계: 파면·해임·강등·정직 / 경징계: 감봉·견책)
+_DISCIPLINE_CATS = ["파면", "해임", "강등", "정직", "감봉", "견책"]
+_YEAR_RE = re.compile(r"^(\d{4})년$")
+
+
+def summarize_discipline_table(tables) -> dict:
+    """징계처분 현황(21211) itemReportRight.do 표에서 징계종류별 건수 집계.
+
+    '징계종류' 헤더를 가진 표를 찾아 해당 컬럼을 분류·카운트한다.
+    출근정지→정직, 표준 6종 부분일치, 미매칭→기타.
+    반환: {"징계건수": {종류: n}, "총건수": N, "기타종류": [원문, ...]}
+    """
+    counts = {c: 0 for c in _DISCIPLINE_CATS}
+    counts["기타"] = 0
+    others = []
+    total = 0
+    for tbl in (tables or []):
+        if not tbl or "징계종류" not in tbl[0]:
+            continue
+        col = tbl[0].index("징계종류")
+        for row in tbl[1:]:
+            if col >= len(row):
+                continue
+            jong = (row[col] or "").strip()
+            if not jong:
+                continue
+            total += 1
+            if "출근정지" in jong:
+                counts["정직"] += 1
+                continue
+            matched = next((c for c in _DISCIPLINE_CATS if c in jong), None)
+            if matched:
+                counts[matched] += 1
+            else:
+                counts["기타"] += 1
+                others.append(jong)
+        break  # 첫 '징계종류' 표만
+    return {"징계건수": counts, "총건수": total, "기타종류": others}
+
+
+def summarize_integrity_table(tables) -> dict:
+    """청렴도 평가결과(40211) 표에서 연도별 등급 추출.
+
+    헤더의 'YYYY년' 컬럼을 연도로, '청렴도' 포함 행의 연도별 값을 등급으로.
+    반환: {"연도별등급": {"2021": "4등급", ...}, "연도": [...]}
+    """
+    for tbl in (tables or []):
+        if not tbl:
+            continue
+        year_cols = []
+        for i, h in enumerate(tbl[0]):
+            m = _YEAR_RE.match((h or "").strip())
+            if m:
+                year_cols.append((i, m.group(1)))
+        if not year_cols:
+            continue
+        grade_row = next((r for r in tbl[1:] if r and "청렴도" in (r[0] or "")), None)
+        if not grade_row:
+            continue
+        grades = {}
+        for i, yr in year_cols:
+            val = (grade_row[i] or "").strip() if i < len(grade_row) else ""
+            grades[yr] = val if (val and val != "해당없음") else "-"
+        return {"연도별등급": grades, "연도": [yr for _, yr in year_cols]}
+    return {"연도별등급": {}, "연도": []}
+
+
+# ─────────────────────────────────────────────────────────
 # 내부규정 (findRuleList → findRuleDtl → rulefiledown)
 # ─────────────────────────────────────────────────────────
 

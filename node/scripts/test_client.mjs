@@ -25,7 +25,7 @@ const check = (cond, label, extra = "") => {
 // ── 0) listTools
 const { tools } = await client.listTools();
 log(`\n[0] listTools → ${tools.length}개`);
-check(tools.length === 12, "도구 12개 노출", `(실제 ${tools.length})`);
+check(tools.length === 16, "도구 16개 노출", `(실제 ${tools.length})`);
 log("    " + tools.map((t) => t.name).join(", "));
 
 // ── 1) search_organs
@@ -132,6 +132,34 @@ check(lrLight?.규정?.length > 0 && !lrLight.규정[0]?.latest, "기본 경량(
 log(`\n[12] search_organs(org_type="기타공공기관") truncated`);
 const sBig = await call("search_organs", { org_type: "기타공공기관" });
 check("truncated" in sBig && "표시" in sBig, "truncated 필드 존재", `→ 총 ${sBig?.총_검색결과}, truncated=${sBig?.truncated}`);
+
+// ── 13) get_organ_profile (v1.3.0)
+log(`\n[13] get_organ_profile(C0208)`);
+const prof = await call("get_organ_profile", { apbaId: "C0208" });
+check(prof?.기관명 === "한국산업단지공단" && !!prof?.기관장 && !!prof?.홈페이지,
+  "기관 프로필", `→ 장=${prof?.기관장}, HP=${prof?.홈페이지}`);
+
+// ── 14) list_menus_tree (v1.3.0)
+log(`\n[14] list_menus_tree`);
+const tree = await call("list_menus_tree", {});
+const cats = Object.keys(tree || {});
+check(cats.length >= 3 && tree[cats[0]]?.[0]?.파일유형 !== undefined,
+  "메뉴 계층+파일유형", `→ 대분류 ${cats.length}개`);
+
+// ── 15) get_structured_summary (v1.3.0)
+log(`\n[15] get_structured_summary`);
+const discSum = await call("get_structured_summary", { kind: "discipline", apbaId: "C0208" });
+check(typeof discSum?.징계건수 === "object" && discSum?.총건수 >= 0, "discipline 집계", `→ 총 ${discSum?.총건수}건`);
+const integ = await call("get_structured_summary", { kind: "integrity", apbaId: "C0208" });
+check(typeof integ?.연도별등급 === "object" && (integ?.연도?.length ?? 0) > 0, "integrity 등급", `→ 연도 ${integ?.연도?.length}개`);
+const safe = await call("get_structured_summary", { kind: "safety", apbaId: "C0208" });
+check(String(safe?.error).startsWith("UNSUPPORTED"), "safety 안내에러", `→ ${String(safe?.error).slice(0, 25)}`);
+
+// ── 16) compare_organs (v1.3.0)
+log(`\n[16] compare_organs(21201, 2기관)`);
+const cmp = await call("compare_organs", { rootNo: "21201", names: "한국산업단지공단,한국전력공사" });
+check(cmp?.비교기관수 === 2 && (cmp?.결과 ?? []).every((r) => r.표_개수 > 0),
+  "다중 비교 병렬", `→ ${(cmp?.결과 ?? []).map((r) => r.기관명).join(",")}`);
 
 await client.close();
 log(`\n━━━ 결과: PASS ${pass} / FAIL ${fail} ━━━`);
