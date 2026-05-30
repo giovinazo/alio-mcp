@@ -94,7 +94,7 @@ log(`\n[8] 규정 1건 상세→다운로드 (download_rule_file)`);
 // 목록 첫 규정 seq로 list_rules 풀스펙은 느리므로, 직접 download 체인 검증:
 //   include_files=false 결과의 seq로는 file_no를 모르니, count_only=false+include_files=true 1페이지 대신
 //   가장 가벼운 방법: 첫 규정 seq를 list_rules 풀스펙 1건으로 못 가져오므로 list_board_items 경로 대신 규정 풀스펙 소량 호출
-const full = await call("list_rules", { instName: "한국산업단지공단", divis: "K1500" }); // 정관(보통 1건)
+const full = await call("list_rules", { instName: "한국산업단지공단", divis: "K1500", include_files: true }); // 정관(보통 1건)
 const firstWithFile = full?.규정?.find((r) => r?.latest?.file_no);
 if (firstWithFile) {
   log(`    정관 최신파일: ${firstWithFile.latest.file_name} (fileNo=${firstWithFile.latest.file_no})`);
@@ -122,6 +122,16 @@ if (disc) {
 log(`\n[10] list_organs page coercion (page="1" 문자열)`);
 const loStr = await call("list_organs", { rootNo: "10105", page: "1" });
 check(loStr?.기관?.length > 0, "page 문자열 coerce 동작", `→ ${loStr?.기관?.length ?? loStr?.error}건`);
+
+// ── 11) list_rules 기본 경량(include_files 생략 → false): latest 부재 확인
+log(`\n[11] list_rules 기본 경량(include_files 생략)`);
+const lrLight = await call("list_rules", { instName: "한국산업단지공단", divis: "K1500" });
+check(lrLight?.규정?.length > 0 && !lrLight.규정[0]?.latest, "기본 경량(latest 부재)", `→ ${lrLight?.규정?.length}건`);
+
+// ── 12) search_organs truncated 필드 (>50 매칭)
+log(`\n[12] search_organs(org_type="기타공공기관") truncated`);
+const sBig = await call("search_organs", { org_type: "기타공공기관" });
+check("truncated" in sBig && "표시" in sBig, "truncated 필드 존재", `→ 총 ${sBig?.총_검색결과}, truncated=${sBig?.truncated}`);
 
 await client.close();
 log(`\n━━━ 결과: PASS ${pass} / FAIL ${fail} ━━━`);

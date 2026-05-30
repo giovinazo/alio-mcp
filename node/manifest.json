@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "alio-mcp",
   "display_name": "알리오 항목별공시 (ALIO)",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "한국 공공기관 정보공개시스템 알리오(www.alio.go.kr)의 항목별공시 데이터를 LLM 도구로 노출합니다. 기관 검색(이름·지역·유형)·메뉴·기관목록·게시판/보고서 자료·내부규정 조회, 보고서 본문(표) 조회 및 PDF·첨부파일 다운로드 12종.",
   "long_description": "알리오(ALIO)는 한국 약 355개 공공기관의 경영정보 공개시스템입니다. 이 확장은 자연어로 '대구 위탁집행형 준정부기관 찾아줘', '한국전력 자체감사결과 받아줘', '○○공단 징계현황 본문 보여줘' 같은 요청을 처리할 수 있도록, 알리오 항목별공시 API를 12개 도구로 제공합니다. 별도 API 키 없이 공개 데이터만 사용합니다.",
   "author": {
@@ -21,7 +21,10 @@
     "entry_point": "server/index.mjs",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/server/index.mjs"]
+      "args": ["${__dirname}/server/index.mjs"],
+      "env": {
+        "ALIO_DOWNLOAD_DIR": "${user_config.download_directory}"
+      }
     }
   },
   "tools": [
@@ -38,6 +41,16 @@
     { "name": "list_rules", "description": "기관 내부규정 목록 + 최신 파일 메타 조회" },
     { "name": "download_rule_file", "description": "내부규정 파일을 fileNo로 다운로드" }
   ],
+  "user_config": {
+    "download_directory": {
+      "type": "directory",
+      "title": "다운로드 폴더",
+      "description": "알리오 보고서·첨부파일을 저장할 폴더입니다. 미지정 시 홈 폴더의 Downloads/alio에 저장됩니다.",
+      "required": false,
+      "multiple": false,
+      "default": ["${HOME}/Downloads/alio"]
+    }
+  },
   "compatibility": {
     "platforms": ["darwin", "win32", "linux"],
     "runtimes": {

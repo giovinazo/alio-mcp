@@ -47,7 +47,7 @@ def skip(label, reason):
 
 def main():
     print("=" * 70)
-    print(f"alio-mcp v0.6.0 자체점검 ({datetime.now():%Y-%m-%d %H:%M:%S})")
+    print(f"alio-mcp v0.7.0 자체점검 ({datetime.now():%Y-%m-%d %H:%M:%S})")
     print("테스트 기관: 한국산업단지공단 (apbaId=C0208)")
     print("=" * 70)
 
@@ -172,7 +172,7 @@ def main():
           count.get("totalCnt", 0) >= 1 and "규정" not in count,
           f"{count.get('totalCnt')}건, 분류={count.get('분류명')}, payload keys={list(count.keys())}")
 
-    rules = m.list_rules(inst_name, divis="K1500")
+    rules = m.list_rules(inst_name, divis="K1500", include_files=True)
     check("list_rules(산단공, K1500 정관)",
           rules.get("totalCnt", 0) >= 1 and rules.get("규정"),
           f"{rules.get('totalCnt')}건, 분류={rules.get('분류명')}")
@@ -209,6 +209,25 @@ def main():
               f"{r}")
     else:
         skip("download_disclosure_attachment(dfile)", "사망자수 산단공 제출번호 없음")
+
+    # ───── [6] v0.7.0 신규 (저장경로·include_files 기본·truncated) ─────
+    print("\n[6] v0.7.0 신규 동작")
+
+    dsd = m._default_save_dir()
+    check("기본 저장경로 크로스플랫폼(/tmp 아님)",
+          not dsd.startswith("/tmp") and dsd.endswith(os.path.join("Downloads", "alio")),
+          f"→ {dsd}")
+
+    light = m.list_rules(inst_name, divis="K1500")
+    has_latest = bool(light.get("규정") and light["규정"][0].get("latest"))
+    check("list_rules 기본 경량(include_files 생략 → latest 부재)",
+          bool(light.get("규정")) and not has_latest,
+          f"→ {light.get('totalCnt')}건, latest부재={not has_latest}")
+
+    big = m.search_organs(org_type="기타공공기관")
+    check("search_organs truncated 필드",
+          "truncated" in big and "표시" in big,
+          f"→ 총 {big.get('총_검색결과')}, truncated={big.get('truncated')}")
 
     # ───── 정리 ─────
     print()

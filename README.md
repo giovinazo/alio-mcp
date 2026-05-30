@@ -135,7 +135,7 @@ CRAWLER_DIR=/path/to/alio-crawler ./sync_to_crawler.sh
 }
 ```
 
-### 4. `download_report(disclosureNo, save_dir="/tmp/alio_downloads", filename="")`
+### 4. `download_report(disclosureNo, save_dir="~/Downloads/alio", filename="")`
 
 공시번호로 보고서 PDF 다운로드.
 
@@ -147,7 +147,7 @@ CRAWLER_DIR=/path/to/alio-crawler ./sync_to_crawler.sh
 **반환 예**
 ```json
 {
-  "saved_path": "/tmp/alio_downloads/alio_2025101403058502.pdf",
+  "saved_path": "~/Downloads/alio/alio_2025101403058502.pdf",
   "size_bytes": 90291,
   "content_type": "application/pdf"
 }
@@ -208,12 +208,12 @@ CRAWLER_DIR=/path/to/alio-crawler ./sync_to_crawler.sh
 - `name` *(string, optional)* — 저장 파일명
 - `spath`, `sfile` *(string)* — `kind="upload"`일 때
 - `file_no` *(string)* — `kind="fileno"`일 때
-- `save_dir` *(string, optional, 기본 `/tmp/alio_downloads`)*
+- `save_dir` *(string, optional, 기본 `~/Downloads/alio`)*
 
 **반환 예**
 ```json
 {
-  "saved_path": "/tmp/alio_downloads/2025년도 산업통상자원부 종합감사 결과.pdf",
+  "saved_path": "~/Downloads/alio/2025년도 산업통상자원부 종합감사 결과.pdf",
   "size_bytes": 75824
 }
 ```

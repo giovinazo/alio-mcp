@@ -8,6 +8,7 @@
  * 주의: stdout은 JSON-RPC 채널 — 모든 로깅은 console.error(stderr)로만.
  */
 import * as path from "node:path";
+import * as os from "node:os";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -35,8 +36,13 @@ import {
   type Institution,
 } from "./core";
 
-const server = new McpServer({ name: "alio", version: "1.1.0" });
-const DEFAULT_SAVE_DIR = "/tmp/alio_downloads";
+const server = new McpServer({ name: "alio", version: "1.2.0" });
+// 다운로드 기본 저장 폴더 — ALIO_DOWNLOAD_DIR(manifest user_config로 주입) 우선,
+// 없으면 OS 무관 ~/Downloads/alio. /tmp는 macOS 재부팅 삭제·Windows 경로 무효라 제외.
+const DEFAULT_SAVE_DIR = (() => {
+  const env = (process.env.ALIO_DOWNLOAD_DIR ?? "").trim();
+  return env || path.join(os.homedir(), "Downloads", "alio");
+})();
 
 /** dict/list 결과를 MCP text content로 직렬화 (한글 유니코드 보존). */
 function jsonResult(obj: unknown) {
@@ -105,10 +111,12 @@ server.registerTool(
   {
     title: "항목별 공시 기관 목록",
     description:
-      "특정 메뉴(rootNo)에 공시하는 기관 목록(약 355개). 콤마 다중 rootNo는 첫 항목만 사용. " +
+      "특정 메뉴(rootNo)에 공시하는 기관 목록(약 355개). rootNo는 list_menus 응답의 'rootNo'. " +
+      "한 페이지 ≈10건, totalCnt로 규모 확인 후 page 순회. 특정 기관만 필요하면 search_organs(name)으로 " +
+      "기관ID를 먼저 얻는 편이 토큰 효율적. 콤마 다중 rootNo는 첫 항목만 사용. " +
       "반환: {totalCnt, page, 기관:[{기관ID, 기관명, 기관유형, 주무부처, 기준연도, 기준분기, 공시번호, 제출번호}]}.",
     inputSchema: {
-      rootNo: z.string().describe("메뉴 rootNo (예: '10105' 일반현황, 'B1010' 임원 모집공고)."),
+      rootNo: z.string().describe("메뉴 rootNo — list_menus 응답의 'rootNo' (예: '10105' 일반현황, 'B1010' 임원 모집공고)."),
       page: z.coerce.number().int().default(1).describe("페이지 번호 (1부터)."),
     },
   },
@@ -147,7 +155,11 @@ server.registerTool(
 
     const d = body?.data ?? {};
     const organs = d?.organList ?? [];
-    if (!organs.length) return jsonResult({ error: `NOT_FOUND: rootNo='${primary}' 기관 목록 없음` });
+    if (!organs.length)
+      return jsonResult({
+        error: `NOT_FOUND: rootNo='${primary}' 기관 목록 없음`,
+        hint: "rootNo가 list_menus의 'rootNo'인지 확인. 게시판형(B로 시작)은 list_board_items 사용.",
+      });
 
     return jsonResult({
       totalCnt: d?.totalCnt ?? null,
@@ -179,7 +191,7 @@ server.registerTool(
       "응답 필드를 그대로 list_board_attachments 호출에 활용 가능.",
     inputSchema: {
       rootNo: z.string().describe("항목 rootNo (예: 'B1010', '43006')."),
-      apbaId: z.string().default("").describe("특정 기관 ID로 한정(예: 'C0208'). 'B' 게시판형은 빈 값 가능."),
+      apbaId: z.string().default("").describe("기관ID — search_organs/list_organs 응답의 '기관ID'(예: 'C0208'). 'B' 게시판형은 빈 값 가능."),
       page: z.coerce.number().int().default(1).describe("페이지 번호 (1부터)."),
     },
   },
@@ -215,7 +227,10 @@ server.registerTool(
     const d = body?.data ?? {};
     const items = d?.result ?? [];
     if (!items.length)
-      return jsonResult({ error: `NOT_FOUND: rootNo='${rootNo}' apbaId='${apbaId}' 자료 없음` });
+      return jsonResult({
+        error: `NOT_FOUND: rootNo='${rootNo}' apbaId='${apbaId}' 자료 없음`,
+        hint: "숫자 rootNo(43006 등)는 apbaId 필요 — search_organs로 기관ID 확인 후 지정. 또는 해당 기관 미공시.",
+      });
 
     return jsonResult({
       rootNo,
@@ -237,7 +252,7 @@ server.registerTool(
       "공시번호로 호출. 반환: {saved_path, size_bytes}.",
     inputSchema: {
       disclosureNo: z.string().describe("공시번호 (list_organs/list_board_items 응답의 '공시번호')."),
-      save_dir: z.string().default(DEFAULT_SAVE_DIR).describe("저장 디렉토리 (없으면 자동 생성)."),
+      save_dir: z.string().default(DEFAULT_SAVE_DIR).describe("저장 디렉토리. 미지정 시 ALIO_DOWNLOAD_DIR 또는 홈폴더 Downloads/alio."),
       filename: z.string().default("").describe("저장 파일명. 빈 값이면 'alio_{disclosureNo}.pdf'."),
     },
   },
@@ -330,7 +345,13 @@ server.registerTool(
     const 조건 = { name: nm, region: rg, org_type: tp };
     if (matches.length === 0)
       return jsonResult({ error: "NOT_FOUND: 조건에 맞는 기관 없음", 총_검색결과: 0, 조건 });
-    return jsonResult({ 총_검색결과: matches.length, 조건, 기관: matches.slice(0, 50) });
+    return jsonResult({
+      총_검색결과: matches.length,
+      표시: Math.min(matches.length, 50),
+      truncated: matches.length > 50,
+      조건,
+      기관: matches.slice(0, 50),
+    });
   }
 );
 
@@ -400,7 +421,7 @@ server.registerTool(
       spath: z.string().default("").describe("kind='upload'일 때 알리오 upload 경로."),
       sfile: z.string().default("").describe("kind='upload'일 때 알리오 파일명."),
       file_no: z.string().default("").describe("kind='fileno'일 때 알리오 fileNo."),
-      save_dir: z.string().default(DEFAULT_SAVE_DIR).describe("저장 디렉토리 (없으면 자동 생성)."),
+      save_dir: z.string().default(DEFAULT_SAVE_DIR).describe("저장 디렉토리. 미지정 시 ALIO_DOWNLOAD_DIR 또는 홈폴더 Downloads/alio."),
     },
   },
   async ({ kind, name, spath, sfile, file_no, save_dir }) => {
@@ -475,7 +496,7 @@ server.registerTool(
       disclosureNo: z.string().default("").describe("공시번호 (kind='file'일 때 필수)."),
       submissionNo: z.string().default("").describe("제출번호 (kind='dfile'일 때 필수)."),
       fileId: z.string().default("").describe("파일 ID (kind='file'일 때 필수)."),
-      save_dir: z.string().default(DEFAULT_SAVE_DIR).describe("저장 디렉토리 (없으면 자동 생성)."),
+      save_dir: z.string().default(DEFAULT_SAVE_DIR).describe("저장 디렉토리. 미지정 시 ALIO_DOWNLOAD_DIR 또는 홈폴더 Downloads/alio."),
     },
   },
   async ({ kind, fileName, disclosureNo, submissionNo, fileId, save_dir }) => {
@@ -500,14 +521,14 @@ server.registerTool(
   {
     title: "기관 내부규정 목록",
     description:
-      "기관 내부규정 목록 조회. 기본은 전체 페이지 순회 + 각 규정 findRuleDtl로 최신 파일 메타까지 반환. " +
-      "성능 옵션: count_only=true(totalCnt만, HTTP 1회), include_files=false(파일 메타 생략). " +
+      "기관 내부규정 목록 조회. 기본은 목록만 빠르게 반환(파일 메타 없음). 다운로드용 fileNo가 " +
+      "필요하면 include_files=true(각 규정 findRuleDtl 호출 — 느림). count_only=true면 totalCnt만(HTTP 1회). " +
       "divis: 'K1500'정관/'K1100'인사·복무·징계/'K1200'보수/'K1300'직제/'K1400'기타.",
     inputSchema: {
       instName: z.string().describe("기관명(apbaNa 검색). 예: '한국산업단지공단'."),
       divis: z.string().default("").describe("분류 코드(빈 값=전체). K1500/K1100/K1200/K1300/K1400."),
       count_only: z.boolean().default(false).describe("true면 totalCnt만 반환(HTTP 1회)."),
-      include_files: z.boolean().default(true).describe("false면 findRuleDtl 생략(파일 메타 없음)."),
+      include_files: z.boolean().default(false).describe("기본 false(목록만 빠르게). true면 findRuleDtl로 latest.file_no 등 파일 메타 포함(느림)."),
     },
   },
   async ({ instName, divis, count_only, include_files }) => {
@@ -575,7 +596,7 @@ server.registerTool(
     inputSchema: {
       fileNo: z.string().describe("알리오 fileNo (list_rules → latest.file_no)."),
       fileName: z.string().default("").describe("저장 파일명. 빈 값이면 'rule_{fileNo}.bin'."),
-      save_dir: z.string().default(DEFAULT_SAVE_DIR).describe("저장 디렉토리 (없으면 자동 생성)."),
+      save_dir: z.string().default(DEFAULT_SAVE_DIR).describe("저장 디렉토리. 미지정 시 ALIO_DOWNLOAD_DIR 또는 홈폴더 Downloads/alio."),
     },
   },
   async ({ fileNo, fileName, save_dir }) => {
@@ -594,4 +615,4 @@ server.registerTool(
 // ─────────────────────────────────────────────────────────────
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error("[alio-mcp] stdio 서버 시작 (도구 11개)");
+console.error("[alio-mcp] stdio 서버 시작 (도구 12개)");

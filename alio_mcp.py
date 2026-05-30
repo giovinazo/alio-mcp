@@ -1,4 +1,4 @@
-"""알리오 항목별공시 MCP 서버 v0.6.0
+"""알리오 항목별공시 MCP 서버 v0.7.0
 
 한국 공공기관 정보공개시스템 알리오(www.alio.go.kr)의 항목별공시
 92개 메뉴와 약 355개 공시 대상 기관 데이터를 LLM 도구로 노출한다.
@@ -49,6 +49,19 @@ _JSON_HEADERS = {
 
 def _normalize(s: str) -> str:
     return s.replace(" ", "").lower()
+
+
+def _default_save_dir() -> str:
+    """다운로드 기본 저장 폴더 — 환경변수 ALIO_DOWNLOAD_DIR(Claude Desktop의
+    user_config로 주입) 우선, 없으면 OS 무관 ~/Downloads/alio.
+
+    /tmp는 macOS 재부팅 시 삭제·Finder 비가시이고 Windows에선 경로 자체가
+    무효라, 받은 파일을 사용자가 못 찾는 문제가 있어 기본값에서 제외한다.
+    """
+    env = os.environ.get("ALIO_DOWNLOAD_DIR", "").strip()
+    if env:
+        return env
+    return str(Path.home() / "Downloads" / "alio")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -121,9 +134,13 @@ def list_menus(category: str = "", keyword: str = "") -> list[dict]:
 def list_organs(rootNo: str, page: int = 1) -> dict:
     """특정 메뉴(rootNo)에 공시하는 기관 목록 (약 355개).
 
+    한 페이지 ≈ 10건이며, totalCnt로 전체 규모를 보고 page로 순회한다.
+    특정 기관만 필요하면 355개를 훑기보다 search_organs(name)으로 기관ID를
+    먼저 얻는 편이 토큰 효율적이다.
+
     Args:
-        rootNo: 메뉴 rootNo (예: '10105' 일반현황, 'B1010' 임원 모집공고).
-                콤마 다중('20201,20202,20203,20204')은 자동으로 첫 항목만 사용.
+        rootNo: 메뉴 rootNo — list_menus 응답의 'rootNo' (예: '10105' 일반현황,
+                'B1010' 임원 모집공고). 콤마 다중은 자동으로 첫 항목만 사용.
         page: 페이지 번호 (1부터).
 
     Returns:
@@ -159,7 +176,8 @@ def list_organs(rootNo: str, page: int = 1) -> dict:
     d = body.get("data") or {}
     organs = d.get("organList", []) or []
     if not organs:
-        return {"error": f"NOT_FOUND: rootNo='{primary}' 기관 목록 없음"}
+        return {"error": f"NOT_FOUND: rootNo='{primary}' 기관 목록 없음",
+                "hint": "rootNo가 list_menus의 'rootNo'인지 확인. 게시판형(B로 시작)은 list_board_items 사용."}
 
     return {
         "totalCnt": d.get("totalCnt"),
@@ -194,8 +212,8 @@ def list_board_items(rootNo: str, apbaId: str = "", page: int = 1) -> dict:
     **중요**: 43006·32301 등 일부 rootNo는 apbaId 없이 전체 조회 불가.
 
     Args:
-        rootNo: 항목 rootNo (예: 'B1010', '43006').
-        apbaId: 특정 기관 ID로 한정 (예: 'C0208').
+        rootNo: 항목 rootNo (예: 'B1010', '43006'). list_menus 응답의 'rootNo'.
+        apbaId: 기관 ID — search_organs/list_organs 응답의 '기관ID' (예: 'C0208').
                 'B' 시작 게시판형은 빈 문자열로 전체 조회 가능.
                 숫자 rootNo(43006 등)는 apbaId 필수일 수 있음.
         page: 페이지 번호 (1부터).
@@ -232,7 +250,8 @@ def list_board_items(rootNo: str, apbaId: str = "", page: int = 1) -> dict:
     d = body.get("data") or {}
     items = d.get("result", []) or []
     if not items:
-        return {"error": f"NOT_FOUND: rootNo='{rootNo}' apbaId='{apbaId}' 자료 없음"}
+        return {"error": f"NOT_FOUND: rootNo='{rootNo}' apbaId='{apbaId}' 자료 없음",
+                "hint": "숫자 rootNo(43006 등)는 apbaId 필요 — search_organs로 기관ID 확인 후 지정. 또는 해당 기관 미공시."}
 
     return {
         "rootNo": rootNo, "page": page,
@@ -259,7 +278,7 @@ def list_board_items(rootNo: str, apbaId: str = "", page: int = 1) -> dict:
 @mcp.tool()
 def download_report(
     disclosureNo: str,
-    save_dir: str = "/tmp/alio_downloads",
+    save_dir: str = _default_save_dir(),
     filename: str = "",
 ) -> dict:
     """공시번호로 보고서 PDF 다운로드.
@@ -268,7 +287,7 @@ def download_report(
 
     Args:
         disclosureNo: 공시번호 (list_organs/list_board_items 응답의 '공시번호').
-        save_dir: 저장 디렉토리 (없으면 자동 생성).
+        save_dir: 저장 디렉토리. 빈 값이면 ALIO_DOWNLOAD_DIR 또는 ~/Downloads/alio.
         filename: 저장 파일명. 빈 문자열이면 'alio_{disclosureNo}.pdf'.
 
     Returns:
@@ -357,6 +376,8 @@ def search_organs(name: str = "", region: str = "", org_type: str = "") -> dict:
 
     return {
         "총_검색결과": len(matches),
+        "표시": min(len(matches), 50),
+        "truncated": len(matches) > 50,
         "조건": {"name": name, "region": region, "org_type": org_type},
         "기관": matches[:50],
     }
@@ -473,7 +494,7 @@ def download_board_attachment(
     spath: str = "",
     sfile: str = "",
     file_no: str = "",
-    save_dir: str = "/tmp/alio_downloads",
+    save_dir: str = _default_save_dir(),
 ) -> dict:
     """게시판형 첨부파일 다운로드.
 
@@ -485,7 +506,7 @@ def download_board_attachment(
         spath: kind='upload'일 때 알리오 upload 경로.
         sfile: kind='upload'일 때 알리오 파일명.
         file_no: kind='fileno'일 때 알리오 fileNo.
-        save_dir: 저장 디렉토리 (없으면 자동 생성).
+        save_dir: 저장 디렉토리. 빈 값이면 ALIO_DOWNLOAD_DIR 또는 ~/Downloads/alio.
 
     Returns:
         {"saved_path", "size_bytes"}
@@ -583,7 +604,7 @@ def download_disclosure_attachment(
     disclosureNo: str = "",
     submissionNo: str = "",
     fileId: str = "",
-    save_dir: str = "/tmp/alio_downloads",
+    save_dir: str = _default_save_dir(),
 ) -> dict:
     """보고서형 공시의 부속 첨부파일 다운로드.
 
@@ -597,7 +618,7 @@ def download_disclosure_attachment(
         disclosureNo: 공시번호 (kind='file'일 때 필수).
         submissionNo: 제출번호 (kind='dfile'일 때 필수).
         fileId: 파일 ID (kind='file'일 때 필수, parse_files_field 결과의 'id').
-        save_dir: 저장 디렉토리 (없으면 자동 생성).
+        save_dir: 저장 디렉토리. 빈 값이면 ALIO_DOWNLOAD_DIR 또는 ~/Downloads/alio.
 
     Returns:
         {"saved_path", "size_bytes"}
@@ -636,13 +657,13 @@ def list_rules(
     instName: str,
     divis: str = "",
     count_only: bool = False,
-    include_files: bool = True,
+    include_files: bool = False,
 ) -> dict:
     """기관 내부규정 목록 조회 (성능 옵션 2종).
 
-    기본은 전체 페이지 순회 + 각 규정의 findRuleDtl 호출로 최신 파일 메타까지
-    반환한다 (다운로드 체인용). 다수 기관 카운트 집계 등 빠른 호출이 필요하면
-    count_only=True / include_files=False로 호출 횟수를 크게 줄일 수 있다.
+    기본은 전체 페이지를 순회해 규정 목록만 빠르게 반환한다(파일 메타 없음).
+    다운로드할 파일의 fileNo가 필요할 때만 include_files=True로 각 규정의
+    findRuleDtl까지 호출한다(느림). 단순 건수만 필요하면 count_only=True.
 
     Args:
         instName: 기관명 (apbaNa 검색). 예: '한국산업단지공단', '한국전력공사'.
@@ -652,23 +673,23 @@ def list_rules(
         count_only: True면 findRuleList 1페이지만 호출해 totalCnt만 반환.
                     findRuleDtl·후속 페이지 호출 일체 없음. 다수 기관 카운트
                     집계용 최고속 모드 (HTTP 1회).
-        include_files: False면 findRuleDtl 호출을 생략한다(파일 메타 없음).
-                       페이지 순회만 수행 → 호출 횟수를 페이지 수만큼으로 절감.
-                       다운로드가 필요 없는 목록 조회에 권장.
+        include_files: 기본 False — findRuleDtl 호출을 생략해 목록만 빠르게 반환.
+                       다운로드용 latest.file_no가 필요할 때만 True로 설정한다
+                       (규정 수만큼 추가 HTTP — 국토정보공사 158건 시 174회).
 
     Returns:
         count_only=True:
             {"instName", "totalCnt", "분류명"}
-        count_only=False, include_files=False:
+        count_only=False, include_files=False (기본 — 목록만):
             {"totalCnt", "분류명", "규정": [{"seq", "title", "insdRuleDivis"}, ...]}
-        count_only=False, include_files=True (기본 — 풀스펙):
+        count_only=False, include_files=True (풀스펙 — 다운로드 메타 포함):
             {"totalCnt", "분류명", "규정": [{"seq", "title", "insdRuleDivis",
              "files_count", "latest": {"file_no", "file_name"}}, ...]}
 
     호출 횟수 비교 (한국국토정보공사 158건 기준):
         count_only=True             → 1회
         include_files=False         → 16회 (페이지 수만)
-        기본(include_files=True)    → 174회 (페이지 16 + findRuleDtl 158)
+        include_files=True          → 174회 (페이지 16 + findRuleDtl 158)
     """
     if not instName:
         return {"error": "MISSING: instName이 필수입니다"}
@@ -741,7 +762,7 @@ def list_rules(
 def download_rule_file(
     fileNo: str,
     fileName: str = "",
-    save_dir: str = "/tmp/alio_downloads",
+    save_dir: str = _default_save_dir(),
 ) -> dict:
     """내부규정 파일을 fileNo로 단건 다운로드.
 
@@ -750,7 +771,7 @@ def download_rule_file(
     Args:
         fileNo: 알리오 fileNo (list_rules → latest.file_no).
         fileName: 저장 파일명. 빈 문자열이면 'rule_{fileNo}.bin'.
-        save_dir: 저장 디렉토리 (없으면 자동 생성).
+        save_dir: 저장 디렉토리. 빈 값이면 ALIO_DOWNLOAD_DIR 또는 ~/Downloads/alio.
 
     Returns:
         {"saved_path", "size_bytes"}
