@@ -823,4 +823,4 @@ server.registerTool(
 // ─────────────────────────────────────────────────────────────
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error("[alio-mcp] stdio 서버 시작 (도구 16개)");
+console.error("[alio-mcp] stdio 서버 시작 (도구 17개)");
