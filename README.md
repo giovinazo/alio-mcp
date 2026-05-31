@@ -8,14 +8,16 @@
 
 GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *AI 에이전트가* 알리오를 쓰게 해준다.
 
-### 지금 바로 시작하기 — `.mcpb` 더블클릭 (권장)
+### 지금 바로 시작하기 — Claude Desktop에 끌어다 놓기 (권장)
 
 1. **[Claude Desktop](https://claude.ai/download)** 설치 (이미 있으면 건너뛰기)
 2. **[최신 릴리스](https://github.com/giovinazo/alio-mcp/releases/latest)** 에서 **`alio-mcp.mcpb`** 다운로드
-3. 받은 `.mcpb` 파일을 **더블클릭** → Claude Desktop 확장(Extensions) 설치 창에서 **설치** 클릭
+3. Claude Desktop 실행 → **설정 → 확장(Extensions)** → 받은 **`alio-mcp.mcpb`를 창 안으로 드래그앤드롭**(또는 **Install Extension** 버튼으로 파일 선택) → **설치** 클릭
 4. 끝. 대화창에서 *"산단공 내부규정 찾아줘"* 처럼 물어보세요.
 
-> **Python·터미널·설정 파일 편집이 전혀 필요 없습니다.** `.mcpb`(MCP Bundle, 구 DXT)에 Node 서버가 단일 파일로 번들되어 더블클릭만으로 설치·삭제됩니다. — *Node/TypeScript 포팅 `node/`, v1.0.0*
+> ⚠️ **Windows 사용자** — `.mcpb`를 **더블클릭하면 "연결 프로그램 없음"** 이 뜹니다. Claude Desktop이 Windows에서 `.mcpb` 파일 형식을 등록하지 않기 때문이며 정상입니다. 위 3번처럼 **앱 안에 드래그앤드롭(또는 Install Extension)** 으로 설치하세요. (macOS는 `.mcpb` 더블클릭도 동작합니다.)
+
+> **Python·터미널·설정 파일 편집이 전혀 필요 없습니다.** `.mcpb`(MCP Bundle, 구 DXT)에 Node 서버가 단일 파일로 번들되어 클릭 몇 번으로 설치·삭제됩니다. — *Node/TypeScript 포팅 `node/`, v1.0.0*
 
 <details>
 <summary><b>개발자·다른 방식 설치</b> (Python 소스 / ZIP / 수동 등록)</summary>
@@ -33,7 +35,7 @@ GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *A
 
 ## 아키텍처
 
-**Python·Node 두 런타임으로 동일한 17개 도구를 제공한다.** Node판(`node/`)은 Python을 1:1 포팅(도구별 동등성 적대 검증 완료)해 **MCPB 번들(`.mcpb`)** 로 패키징 — Claude Desktop 더블클릭 설치용이며, esbuild 단일 번들이라 Node 외 의존성이 없다.
+**Python·Node 두 런타임으로 동일한 17개 도구를 제공한다.** Node판(`node/`)은 Python을 1:1 포팅(도구별 동등성 적대 검증 완료)해 **MCPB 번들(`.mcpb`)** 로 패키징 — Claude Desktop 확장 설치용(설정 → 확장에 드래그앤드롭/Install Extension)이며, esbuild 단일 번들이라 Node 외 의존성이 없다.
 
 이 패키지의 `alio_core.py`는 알리오 API 호출·HTML 파싱·파일 다운로드를 담당하는 **공유 라이브러리(정본)**다. GUI 크롤러([alio-crawler](https://github.com/giovinazo/alio-crawler))는 자기 레포에 이 파일의 **sync된 사본**을 보유하며, 두 프로젝트가 동일 코어로 동작한다.
 
@@ -397,7 +399,7 @@ Claude에서 자연어 한 줄로:
 - **v1.3.0** (2026-05-31) — 도구 4종 추가(총 16개): `list_menus_tree`(메뉴 계층 트리), `get_organ_profile`(기관장·홈페이지·예산 등 프로필), `compare_organs`(다중 기관 본문 병렬 비교), `get_structured_summary`(징계종류별 건수·청렴도 연도별 등급 정형 집계). 크롤러 이용사례 대비 단건 위주 한계 보완.
 - **v1.2.0** (2026-05-31) — 다운로드 저장경로 크로스플랫폼화(`~/Downloads/alio`, 환경변수·manifest `user_config`), UX 개선(인자 출처 안내·`truncated`·에러 `hint`·`list_rules` 경량 기본). 헤드리스 전수검증 `headless_audit.py` 신설(92항목×4엔드포인트 FAILURE 0).
 - **v1.1.0** (2026-05-30) — `search_organs` 지역·유형 AND 필터, `get_report_data`(보고서 본문을 표·평문으로 반환, PDF/HWP 우회) 추가.
-- **v1.0.0** (2026-05-30) — **Node/TypeScript 포팅(`node/`) + MCPB(`.mcpb`) 배포.** Claude Desktop 더블클릭 한 번으로 설치(Python·터미널·설정 파일 편집 불필요). 도구 11개 Python↔TS 동등성 적대 검증 통과(critical 0). 번들 엔트리는 `.mjs`로 두어 Node 18+ 모든 환경에서 ESM 실행 보장. 기존 Python 코어(`alio_core.py`)·alio-crawler 공유 구조는 그대로 유지.
+- **v1.0.0** (2026-05-30) — **Node/TypeScript 포팅(`node/`) + MCPB(`.mcpb`) 배포.** Claude Desktop 확장으로 드래그앤드롭 한 번에 설치(Python·터미널·설정 파일 편집 불필요). 도구 11개 Python↔TS 동등성 적대 검증 통과(critical 0). 번들 엔트리는 `.mjs`로 두어 Node 18+ 모든 환경에서 ESM 실행 보장. 기존 Python 코어(`alio_core.py`)·alio-crawler 공유 구조는 그대로 유지.
 - **v0.4.1** (2026-05-21) — `list_rules` 경량 옵션 2종 추가. `count_only=True`는 findRuleList 1페이지만 호출해 `totalCnt`만 반환(다수 기관 카운트 집계용, HTTP 1회). `include_files=False`는 findRuleDtl 호출을 생략(파일 메타 없이 제목·seq만, HTTP 호출은 페이지 수만큼). 기존 풀스펙 동작은 기본값 유지(하위호환). 한국국토정보공사 158건 기준 174회 → 1회(`count_only`) / 16회(`include_files=False`).
 - **v0.4.0** (2026-05-19) — 도구 4종 추가: `list_all_board_items` (페이지 자동 순회로 audit·mgmt_eval·감사원 등 통합 처리), `download_disclosure_attachment` (보고서 부속 file·dfile), `list_rules` + `download_rule_file` (내부규정 체인 — findRuleList → findRuleDtl → rulefiledown). `self_check.py` 신설 (11개 도구 라이브 점검, PASS=12/13).
 - **v0.3.0** (2026-05-19) — `alio_core.py` 도입(alio-crawler v5.4 다운로드 코어 공유). 도구 3종 추가 (`search_organs`, `list_board_attachments`, `download_board_attachment`). 메뉴 수 83→92개 (ESG 운영·AI 활용 카테고리 신설). 기관 수 344→355개.
@@ -414,4 +416,4 @@ Claude에서 자연어 한 줄로:
 
 ---
 
-**English summary**: MCP server exposing the disclosure data of ~355 Korean public institutions via ALIO (alio.go.kr). 17 tools covering menu/institution lookup, board-type items, report PDF download, disclosure attachment listing/download, internal regulations, and file attachments. Includes a Claude Code sub-agent definition (`agents/alio-investigator.md`) for autonomous bulk data collection. v1.0.0 — also distributed as a one-click `.mcpb` bundle (Node/TypeScript port, esbuild single-file) installable in Claude Desktop by double-click.
+**English summary**: MCP server exposing the disclosure data of ~355 Korean public institutions via ALIO (alio.go.kr). 17 tools covering menu/institution lookup, board-type items, report PDF download, disclosure attachment listing/download, internal regulations, and file attachments. Includes a Claude Code sub-agent definition (`agents/alio-investigator.md`) for autonomous bulk data collection. v1.0.0 — also distributed as a one-click `.mcpb` bundle (Node/TypeScript port, esbuild single-file) installable in Claude Desktop by drag-and-drop into Settings → Extensions (double-click also works on macOS).
