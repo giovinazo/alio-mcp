@@ -12,6 +12,24 @@ import { existsSync } from "node:fs";
 import * as path from "node:path";
 
 // ─────────────────────────────────────────────────────────
+// TLS 검증 정책 (Python alio_core.py의 create_session(verify=False) + 경고억제 대응)
+// ─────────────────────────────────────────────────────────
+// alio.go.kr는 일부 기관·기업 외부망의 SSL 검사(가로채기) 보안장비 뒤에 있어, 기본
+// 인증서 검증을 켜면 "self-signed certificate in chain" 오류로 모든 요청이 실패한다.
+// Python 코어와 동일하게 기본은 검증을 끄고(환경변수 ALIO_VERIFY_SSL=1 일 때만 검증),
+// 검증을 끌 때 Node가 매번 출력하는 TLS 경고는 한 번만 정의해 숨긴다(= urllib3.disable_warnings).
+const ALIO_VERIFY_SSL = process.env.ALIO_VERIFY_SSL === "1";
+if (!ALIO_VERIFY_SSL) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+  const _emitWarning = process.emitWarning.bind(process);
+  process.emitWarning = ((warning: unknown, ...rest: unknown[]) => {
+    const msg = typeof warning === "string" ? warning : (warning as Error | undefined)?.message ?? "";
+    if (typeof msg === "string" && msg.includes("NODE_TLS_REJECT_UNAUTHORIZED")) return;
+    return (_emitWarning as (...a: unknown[]) => void)(warning, ...rest);
+  }) as typeof process.emitWarning;
+}
+
+// ─────────────────────────────────────────────────────────
 // 알리오 사이트 상수
 // ─────────────────────────────────────────────────────────
 
