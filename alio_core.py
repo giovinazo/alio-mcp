@@ -19,7 +19,13 @@ from datetime import datetime
 from typing import Optional
 
 import requests
+import urllib3
 from requests.adapters import HTTPAdapter
+
+# ALIO(alio.go.kr)는 일부 외부망의 SSL 검사(가로채기) 보안장비 뒤에 있어, 인증서 검증을 켜면
+# "self-signed certificate in certificate chain" 오류가 발생한다. 따라서 세션은 verify=False로
+# 동작하며(create_session 기본값 False), 그때 나오는 InsecureRequestWarning 경고를 숨긴다.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # ─────────────────────────────────────────────────────────
@@ -194,7 +200,7 @@ _RETRIABLE_EXCEPTIONS = (
 
 
 def create_session(
-    verify_ssl: bool = True,
+    verify_ssl: bool = False,  # ALIO는 SSL 검사(가로채기) 보안장비 뒤일 수 있어 → 기본 검증 비활성화
     timeout: tuple = _DEFAULT_TIMEOUT,
     max_pool_size: int = 10,
     user_agent: Optional[str] = None,
@@ -310,7 +316,7 @@ def fetch_alio_items(progress_callback=None):
     if progress_callback:
         progress_callback(0, 1, "알리오 항목 메뉴 조회 중...")
 
-    sess = create_session(verify_ssl=True)
+    sess = create_session(verify_ssl=False)
     try:
         resp = retry_request(sess, "POST", url, json={}, headers=headers, timeout=30)
         if resp.status_code != 200:
@@ -829,7 +835,7 @@ def load_public_institutions(progress_callback=None):
             "pageNo": 1,
         }
 
-        _sess = create_session(verify_ssl=True)
+        _sess = create_session(verify_ssl=False)
         resp = retry_request(_sess, "POST", url, json=body, headers=headers, timeout=30)
         if resp.status_code != 200:
             return {}

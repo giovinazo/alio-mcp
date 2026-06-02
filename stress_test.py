@@ -113,7 +113,7 @@ def rec(apba_id, name, item_name, root_no, route, cls, **kw):
 
 
 def _make_session():
-    s = core.create_session(verify_ssl=True)
+    s = core.create_session(verify_ssl=False)  # SSL 검사(가로채기) 보안장비 환경 대응
     s.headers.update(core.HEADERS)
     return s
 

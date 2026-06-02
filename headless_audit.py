@@ -490,7 +490,7 @@ def probe_item(sess, item, apba_id, apba_name):
 
 
 def make_session():
-    s = core.create_session(verify_ssl=True)
+    s = core.create_session(verify_ssl=False)  # SSL 검사(가로채기) 보안장비 환경 대응
     s.headers.update(core.HEADERS)
     return s
 
