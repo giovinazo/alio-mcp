@@ -8,6 +8,24 @@
 
 GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *AI 에이전트가* 알리오를 쓰게 해준다.
 
+### Claude에게 설치 맡기기
+
+이 저장소 주소(`https://github.com/giovinazo/alio-mcp`)를 Claude 입력창에 붙여 넣고 "설치해 줘"라고 하면 됩니다.
+
+> **AI 어시스턴트용 설치 절차.** 사용자가 이 저장소 주소를 주며 설치를 요청했거나, 다른 말 없이 주소만 붙여 넣었다면 설치를 원하는 것으로 보고 아래 절차를 제안하세요.
+>
+> **A. 명령을 실행할 수 있는 환경(Claude Code)**
+> 1. `node --version`으로 Node 18 이상인지 확인합니다. 없으면 사용자에게 Node LTS 설치를 요청합니다(macOS: https://nodejs.org , Windows: `winget install OpenJS.NodeJS.LTS`).
+> 2. 사용자 확인을 받은 뒤 설치기를 내려받아 실행합니다.
+>    - macOS·Linux·Git Bash: `curl -fsSL -o alio-install.mjs https://github.com/giovinazo/alio-mcp/releases/latest/download/install.mjs && node alio-install.mjs`
+>    - Windows PowerShell: `curl.exe -fsSL -o alio-install.mjs https://github.com/giovinazo/alio-mcp/releases/latest/download/install.mjs; node alio-install.mjs`
+> 3. 출력 [1/4]~[4/4]가 모두 ✔이면 `alio-install.mjs`를 지우고, Claude Code를 다시 시작하라고 안내합니다. ✘가 나오면 그 줄을 그대로 보여 주고 원인을 설명합니다.
+>
+> 설치기([`install/install.mjs`](install/install.mjs))가 하는 일은 세 가지뿐입니다: 서버 파일 1개를 `~/.alio-mcp/server/`에 저장, 조사관 에이전트를 `~/.claude/agents/`에 저장(기존 파일은 `.bak`로 보관), `claude mcp add alio -s user`로 등록. 끝에 서버를 띄워 알리오 응답을 점검합니다.
+>
+> **B. 명령을 실행할 수 없는 환경(Claude Desktop 채팅·claude.ai)**
+> 아래 "Claude Desktop 확장으로 설치" 1~5단계를 사용자 운영체제에 맞춰 한 단계씩 안내합니다. 직접 내려받기 링크: [alio-mcp.mcpb](https://github.com/giovinazo/alio-mcp/releases/latest/download/alio-mcp.mcpb) · [alio-investigator-skill.zip](https://github.com/giovinazo/alio-mcp/releases/latest/download/alio-investigator-skill.zip)
+
 ### 지금 바로 시작하기 — Claude Desktop 확장으로 설치 (권장)
 
 1. **[Claude Desktop](https://claude.ai/download)** 설치 (이미 있으면 최신 버전으로 업데이트)
@@ -22,7 +40,7 @@ GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *A
 
 ### Claude Code(터미널) 사용자
 
-Node.js 18 이상이 필요합니다.
+Node.js 18 이상이 필요합니다. 위 "Claude에게 설치 맡기기"로 하면 아래 1~5단계를 설치기가 대신합니다.
 
 1. **[최신 릴리스](https://github.com/giovinazo/alio-mcp/releases/latest)** 에서 `alio-mcp.mcpb`와 `alio-investigator.md`를 받습니다.
 2. `alio-mcp.mcpb`는 zip 형식입니다. 이름을 `alio-mcp.zip`으로 바꿔 원하는 폴더(예: `~/alio-mcp`)에 풉니다.
@@ -417,7 +435,7 @@ Claude에서 자연어 한 줄로:
 
 ## 변경 이력
 
-- **v1.4.1** (2026-10-21) — 배포 정비. ① `.mcpb`를 SSL 검사 장비 대응 수정(2026-06-02) 포함본으로 다시 포장(v1.4.0 첨부본은 수정 이전 판이라 회사망에서 요청이 전부 실패할 수 있었음). ② Claude Desktop용 조사관 스킬 `skills/alio-investigator/` 신설(릴리스 첨부 `alio-investigator-skill.zip`). ③ `agents/alio-investigator.md` 도구 목록을 17개 전부로 갱신(부속 첨부 목록·본문 조회·비교·집계 도구 누락 해소). ④ Claude Code용 Node판 등록 안내 추가. ⑤ `test_client.mjs` 도구 호출 시간 한도 180초(내부규정 목록 조회가 60초를 넘는 경우 대응). 서버 코드 변경 없음, test_client 23 FAIL0.
+- **v1.4.1** (2026-10-21) — 배포 정비. ⓪ Claude Code 설치기 `install/install.mjs`(릴리스 첨부 `install.mjs`·`alio-mcp-server.mjs`): 저장소 주소만 주면 Claude가 내려받기·등록·점검까지 진행. ① `.mcpb`를 SSL 검사 장비 대응 수정(2026-06-02) 포함본으로 다시 포장(v1.4.0 첨부본은 수정 이전 판이라 회사망에서 요청이 전부 실패할 수 있었음). ② Claude Desktop용 조사관 스킬 `skills/alio-investigator/` 신설(릴리스 첨부 `alio-investigator-skill.zip`). ③ `agents/alio-investigator.md` 도구 목록을 17개 전부로 갱신(부속 첨부 목록·본문 조회·비교·집계 도구 누락 해소). ④ Claude Code용 Node판 등록 안내 추가. ⑤ `test_client.mjs` 도구 호출 시간 한도 180초(내부규정 목록 조회가 60초를 넘는 경우 대응). 서버 코드 변경 없음, test_client 23 FAIL0.
 - **v1.4.0** (2026-05-31) — 위탁집행형 준정부기관 49개 × 전 공시항목(92개) 전수 스트레스 테스트(4,516셀, 첨부 8,139건 6.8GB 수집) 결과 반영. ① 신규 도구 `list_disclosure_attachments`(총 17개) — `itemReportFiles.json`로 보고서형 부속 첨부의 `fileNo`/`fileName`/`submissionNo`를 노출. 종전엔 `list_organs`가 이 메타를 안 줘서 `download_disclosure_attachment`의 부속 첨부(감사보고서·손익계산서·안전경영책임보고서 등)를 **도구만으로는 받을 수 없던 갭**을 해소. ② 다운로드 견고화 — 본문 스트리밍 중 끊김(ConnectionReset·ReadTimeout)을 재시도하지 않아 동시성 부하에서 간헐 실패하던 `download_file_to_path`를 요청+스트리밍 전체 재시도 + `.part` 원자적 교체로 재작성(재실행 시 transient 실패 9→0). 재시도는 외부 루프로 일원화(이중 재시도 곱셈 제거). Py↔Node 동등(self_check 26·test_client 23 FAIL0).
 - **v1.3.0** (2026-05-31) — 도구 4종 추가(총 16개): `list_menus_tree`(메뉴 계층 트리), `get_organ_profile`(기관장·홈페이지·예산 등 프로필), `compare_organs`(다중 기관 본문 병렬 비교), `get_structured_summary`(징계종류별 건수·청렴도 연도별 등급 정형 집계). 크롤러 이용사례 대비 단건 위주 한계 보완.
 - **v1.2.0** (2026-05-31) — 다운로드 저장경로 크로스플랫폼화(`~/Downloads/alio`, 환경변수·manifest `user_config`), UX 개선(인자 출처 안내·`truncated`·에러 `hint`·`list_rules` 경량 기본). 헤드리스 전수검증 `headless_audit.py` 신설(92항목×4엔드포인트 FAILURE 0).
