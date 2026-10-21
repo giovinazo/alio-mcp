@@ -11,7 +11,7 @@ const client = new Client({ name: "test-client", version: "1.0.0" });
 await client.connect(transport);
 
 const call = async (name, args) => {
-  const res = await client.callTool({ name, arguments: args });
+  const res = await client.callTool({ name, arguments: args }, undefined, { timeout: 180000 });
   return JSON.parse(res.content?.[0]?.text ?? "null");
 };
 const log = (...a) => console.error(...a);

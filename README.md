@@ -14,6 +14,28 @@ GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *A
 2. **[최신 릴리스](https://github.com/giovinazo/alio-mcp/releases/latest)** 에서 **`alio-mcp.mcpb`** 다운로드
 3. Claude Desktop → **설정(Settings) → 확장(Extensions) → "고급 설정(Advanced settings)" → "Install Extension…"** → 받은 **`alio-mcp.mcpb` 선택** → **Install**. (`.mcpb`가 안 보이면 파일 형식을 "모든 파일"로) — **Windows에서 가장 확실한 방법입니다.**
 4. 끝. 대화창에서 *"산단공 내부규정 찾아줘"* 처럼 물어보세요.
+5. (선택) **조사관 스킬** 추가: 같은 릴리스의 **`alio-investigator-skill.zip`** 을 받아 Claude Desktop **설정 → 기능(Capabilities) → 스킬(Skills) → 업로드**. 여러 기관 일괄 수집·비교 요청 시 도구 고르는 순서와 결과 정리 방식(표·파일 경로·실패 목록)이 적용됩니다.
+
+> 회사·기관 계정(팀 요금제)은 관리자가 확장이나 스킬 업로드를 꺼 두었을 수 있습니다. 메뉴가 안 보이면 관리자에게 문의하세요.
+>
+> 회사망처럼 **SSL 검사(가로채기) 장비**가 있는 곳에서 모든 요청이 실패하면 v1.4.1 이상인지 확인하세요(설정 → 확장에서 버전 확인, 이전 판이면 삭제 후 재설치).
+
+### Claude Code(터미널) 사용자
+
+Node.js 18 이상이 필요합니다.
+
+1. **[최신 릴리스](https://github.com/giovinazo/alio-mcp/releases/latest)** 에서 `alio-mcp.mcpb`와 `alio-investigator.md`를 받습니다.
+2. `alio-mcp.mcpb`는 zip 형식입니다. 이름을 `alio-mcp.zip`으로 바꿔 원하는 폴더(예: `~/alio-mcp`)에 풉니다.
+3. 등록(모든 프로젝트에서 쓰도록 user 범위):
+   ```bash
+   # macOS
+   claude mcp add alio -s user -- node ~/alio-mcp/server/index.mjs
+   # Windows (PowerShell)
+   claude mcp add alio -s user -- node "$env:USERPROFILE\alio-mcp\server\index.mjs"
+   ```
+   다운로드 폴더를 바꾸려면 `-e ALIO_DOWNLOAD_DIR=<폴더>`를 `--` 앞에 붙입니다(기본 `~/Downloads/alio`).
+4. 조사관 에이전트: `alio-investigator.md`를 `~/.claude/agents/`(Windows는 `%USERPROFILE%\.claude\agents\`)에 복사합니다.
+5. Claude Code를 다시 시작하고 `/mcp`에서 `alio`가 연결됨으로 보이면 끝입니다.
 
 > ⚠️ **Windows 사용자** — `.mcpb` **더블클릭은 "연결 프로그램 없음"**, **설정 창에 드래그앤드롭도 무반응**일 수 있습니다(파일 형식 미등록 + 빈 확장 목록엔 드롭 대상이 없어 조용히 실패). 위 3번 **"Install Extension…" 파일 선택** 방식을 쓰세요. (macOS는 더블클릭·드래그앤드롭도 대체로 동작합니다.)
 
@@ -395,6 +417,7 @@ Claude에서 자연어 한 줄로:
 
 ## 변경 이력
 
+- **v1.4.1** (2026-10-21) — 배포 정비. ① `.mcpb`를 SSL 검사 장비 대응 수정(2026-06-02) 포함본으로 다시 포장(v1.4.0 첨부본은 수정 이전 판이라 회사망에서 요청이 전부 실패할 수 있었음). ② Claude Desktop용 조사관 스킬 `skills/alio-investigator/` 신설(릴리스 첨부 `alio-investigator-skill.zip`). ③ `agents/alio-investigator.md` 도구 목록을 17개 전부로 갱신(부속 첨부 목록·본문 조회·비교·집계 도구 누락 해소). ④ Claude Code용 Node판 등록 안내 추가. ⑤ `test_client.mjs` 도구 호출 시간 한도 180초(내부규정 목록 조회가 60초를 넘는 경우 대응). 서버 코드 변경 없음, test_client 23 FAIL0.
 - **v1.4.0** (2026-05-31) — 위탁집행형 준정부기관 49개 × 전 공시항목(92개) 전수 스트레스 테스트(4,516셀, 첨부 8,139건 6.8GB 수집) 결과 반영. ① 신규 도구 `list_disclosure_attachments`(총 17개) — `itemReportFiles.json`로 보고서형 부속 첨부의 `fileNo`/`fileName`/`submissionNo`를 노출. 종전엔 `list_organs`가 이 메타를 안 줘서 `download_disclosure_attachment`의 부속 첨부(감사보고서·손익계산서·안전경영책임보고서 등)를 **도구만으로는 받을 수 없던 갭**을 해소. ② 다운로드 견고화 — 본문 스트리밍 중 끊김(ConnectionReset·ReadTimeout)을 재시도하지 않아 동시성 부하에서 간헐 실패하던 `download_file_to_path`를 요청+스트리밍 전체 재시도 + `.part` 원자적 교체로 재작성(재실행 시 transient 실패 9→0). 재시도는 외부 루프로 일원화(이중 재시도 곱셈 제거). Py↔Node 동등(self_check 26·test_client 23 FAIL0).
 - **v1.3.0** (2026-05-31) — 도구 4종 추가(총 16개): `list_menus_tree`(메뉴 계층 트리), `get_organ_profile`(기관장·홈페이지·예산 등 프로필), `compare_organs`(다중 기관 본문 병렬 비교), `get_structured_summary`(징계종류별 건수·청렴도 연도별 등급 정형 집계). 크롤러 이용사례 대비 단건 위주 한계 보완.
 - **v1.2.0** (2026-05-31) — 다운로드 저장경로 크로스플랫폼화(`~/Downloads/alio`, 환경변수·manifest `user_config`), UX 개선(인자 출처 안내·`truncated`·에러 `hint`·`list_rules` 경량 기본). 헤드리스 전수검증 `headless_audit.py` 신설(92항목×4엔드포인트 FAILURE 0).

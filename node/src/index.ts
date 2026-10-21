@@ -45,7 +45,7 @@ import {
   type Institution,
 } from "./core";
 
-const server = new McpServer({ name: "alio", version: "1.4.0" });
+const server = new McpServer({ name: "alio", version: "1.4.1" });
 // 다운로드 기본 저장 폴더 — ALIO_DOWNLOAD_DIR(manifest user_config로 주입) 우선,
 // 없으면 OS 무관 ~/Downloads/alio. /tmp는 macOS 재부팅 삭제·Windows 경로 무효라 제외.
 const DEFAULT_SAVE_DIR = (() => {
