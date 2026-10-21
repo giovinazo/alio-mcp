@@ -10,7 +10,7 @@ GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *A
 
 ### Claude에게 설치 맡기기
 
-이 저장소 주소(`https://github.com/giovinazo/alio-mcp`)를 Claude 입력창에 붙여 넣고 "설치해 줘"라고 하면 됩니다.
+Claude 입력창에 **`이거 설치해 줘 https://github.com/giovinazo/alio-mcp`** 라고 넣으면 됩니다. Claude Code는 설치기를 받아 실행하고(명령마다 허락을 묻습니다), Claude Desktop은 설치 단계를 안내합니다.
 
 > **AI 어시스턴트용 설치 절차.** 사용자가 이 저장소 주소를 주며 설치를 요청했거나, 다른 말 없이 주소만 붙여 넣었다면 설치를 원하는 것으로 보고 아래 절차를 제안하세요.
 >
@@ -21,7 +21,7 @@ GUI 크롤러는 *사람이* 알리오를 쓰게 해주고, 이 MCP 서버는 *A
 >    - Windows PowerShell: `curl.exe -fsSL -o alio-install.mjs https://github.com/giovinazo/alio-mcp/releases/latest/download/install.mjs; node alio-install.mjs`
 > 3. 출력 [1/4]~[4/4]가 모두 ✔이면 `alio-install.mjs`를 지우고, Claude Code를 다시 시작하라고 안내합니다. ✘가 나오면 그 줄을 그대로 보여 주고 원인을 설명합니다.
 >
-> 설치기([`install/install.mjs`](install/install.mjs))가 하는 일은 세 가지뿐입니다: 서버 파일 1개를 `~/.alio-mcp/server/`에 저장, 조사관 에이전트를 `~/.claude/agents/`에 저장(기존 파일은 `.bak`로 보관), `claude mcp add alio -s user`로 등록. 끝에 서버를 띄워 알리오 응답을 점검합니다.
+> 설치기([`install/install.mjs`](install/install.mjs))가 하는 일은 세 가지뿐입니다: 서버 파일 1개를 `~/.alio-mcp/server/`에 저장, 조사관 에이전트를 `~/.claude/agents/`에 저장(기존 파일은 `.bak`로 보관), `claude mcp add alio -s user`로 등록(이미 `alio`가 user 범위에 등록돼 있으면 지우고 새로 등록하므로 따로 해제할 필요 없음). 끝에 서버를 띄워 알리오 응답을 점검합니다.
 >
 > **B. 명령을 실행할 수 없는 환경(Claude Desktop 채팅·claude.ai)**
 > 아래 "Claude Desktop 확장으로 설치" 1~5단계를 사용자 운영체제에 맞춰 한 단계씩 안내합니다. 직접 내려받기 링크: [alio-mcp.mcpb](https://github.com/giovinazo/alio-mcp/releases/latest/download/alio-mcp.mcpb) · [alio-investigator-skill.zip](https://github.com/giovinazo/alio-mcp/releases/latest/download/alio-investigator-skill.zip)
